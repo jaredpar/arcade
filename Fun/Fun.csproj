@@ -8,6 +8,7 @@
   <ItemGroup>
     <ProjectReference Include="..\src\Microsoft.DotNet.Helix\Client\CSharp\Microsoft.DotNet.Helix.Client.csproj" />
     <ProjectReference Include="..\src\Microsoft.DotNet.Helix\JobSender\Microsoft.DotNet.Helix.JobSender.csproj" />
+    <PackageReference Include="Microsoft.Azure.Storage.Blob" Version="$(MicrosoftAzureStorageBlobVersion)" />
   </ItemGroup>
 
 </Project>
