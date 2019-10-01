@@ -17,6 +17,8 @@ namespace Rolex
         internal TimeSpan ExecutionTime { get; }
         internal int Errors { get; }
 
+        internal int TestsTotal => TestsPassed + TestsSkipped + TestsFailed;
+
         internal XUnitAssemblySummary(
             string assemblyPath,
             int testsPassed,

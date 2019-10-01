@@ -68,6 +68,7 @@ namespace Fun
 
         internal static async Task Scratch()
         {
+            await PrintSummaries();
             var list = await XUnitUtil.ReadSummariesAsync(@"P:\temp\helix\Microsoft.CodeAnalysis.CSharp.Emit.UnitTests.001\Microsoft.CodeAnalysis.CSharp.Emit.UnitTests.dll.001.xml");
 
             var client = new CloudBlobContainer(new Uri("https://helixre107v0xdeko0k025g8.blob.core.windows.net/results-ff35de0c6adb4b4cb6?sv=2018-03-28&sr=c&sig=F2pS5%2BF5XUB6FaJBurbbip4UHu5OqJ5Zd3lyeBdvCzc%3D&se=2019-10-10T20%3A48%3A42Z&sp=rl"));
@@ -99,12 +100,34 @@ namespace Fun
             }
             Directory.CreateDirectory(TestResultsDirectory);
             await util.DownloadAsync(TestResultsDirectory).ConfigureAwait(false);
-
-
+            await PrintSummaries().ConfigureAwait(false);
 
             Console.WriteLine($"Upload Took {sendEnd - sendStart}");
             Console.WriteLine($"Execution Took {executionEnd - executionStart}");
             Console.WriteLine($"Total time {executionEnd - sendStart}");
+        }
+
+        private static async Task PrintSummaries()
+        {
+            var list = await GetSummaries(TestResultsDirectory).ConfigureAwait(false);
+            Console.WriteLine($"Tests run: {list.Sum(x => x.TestsTotal)}");
+            Console.WriteLine($"Tests passed: {list.Sum(x => x.TestsPassed)}");
+            Console.WriteLine($"Tests skipped: {list.Sum(x => x.TestsSkipped)}");
+            Console.WriteLine($"Tests failed: {list.Sum(x => x.TestsFailed)}");
+            Console.WriteLine($"Max test run time: {list.Max(x => x.ExecutionTime)}");
+            Console.WriteLine($"Min test run time: {list.Min(x => x.ExecutionTime)}");
+
+            static async Task<List<XUnitAssemblySummary>> GetSummaries(string testResultDirectory)
+            {
+                var list = new List<XUnitAssemblySummary>();
+                foreach (var xmlFilePath in Directory.EnumerateFiles(testResultDirectory, "*.xml", SearchOption.AllDirectories))
+                {
+                    var fileList = await XUnitUtil.ReadSummariesAsync(xmlFilePath).ConfigureAwait(false);
+                    list.AddRange(fileList);
+                }
+
+                return list;
+            }
         }
 
         private static async Task QueueSemantics()
