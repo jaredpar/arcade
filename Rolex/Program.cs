@@ -24,8 +24,8 @@ namespace Fun
 
         internal static async Task Main(string[] args)
         {
-            await Scratch();
-            // await QueueSemantics().ConfigureAwait(false);
+            await QueueSemantics().ConfigureAwait(false);
+            // await Scratch();
 
 
             /*
@@ -132,8 +132,8 @@ namespace Fun
 
         private static async Task QueueSemantics()
         {
+            const string unitTestFilePath = @"P:\roslyn\artifacts\bin\Microsoft.CodeAnalysis.CSharp.Semantic.UnitTests\Debug\net472\Microsoft.CodeAnalysis.CSharp.Semantic.UnitTests.dll";
             // const string unitTestFilePath = @"P:\roslyn\artifacts\bin\Microsoft.CodeAnalysis.CSharp.Emit.UnitTests\Debug\net472\Microsoft.CodeAnalysis.CSharp.Emit.UnitTests.dll";
-            const string unitTestFilePath = @"P:\roslyn\artifacts\bin\Microsoft.CodeAnalysis.CSharp.Emit.UnitTests\Debug\net472\Microsoft.CodeAnalysis.CSharp.Emit.UnitTests.dll";
             var unitTestFileName = Path.GetFileName(unitTestFilePath);
             var unitTestDirectory = Path.GetDirectoryName(unitTestFilePath);
 
@@ -155,8 +155,8 @@ namespace Fun
                 .Job
                 .Define()
                 .WithType("test/unit")
-                // .WithTargetQueue("Windows.10.Amd64.Open")
-                .WithTargetQueue("Windows.10.Amd64.ClientRS5.Open")
+                .WithTargetQueue("Windows.10.Amd64.Open")
+                // .WithTargetQueue("Windows.10.Amd64.ClientRS5.Open")
                 .WithSource("RoslynUnitTests")
                 .WithCreator("jaredpar")
                 .WithCorrelationPayloadDirectory(unitTestDirectory);
