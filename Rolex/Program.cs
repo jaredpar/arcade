@@ -72,7 +72,7 @@ namespace Fun
             Console.WriteLine(sentJob.ResultsContainerUri + sentJob.ResultsContainerReadSAS);
 
             var executionStart = DateTime.UtcNow;
-            await helixApi.Job.WaitForJobAsync(sentJob.CorrelationId).ConfigureAwait(false);
+            await helixApi.Job.WaitForJobAsync(sentJob.CorrelationId, pollingIntervalMs: 5000).ConfigureAwait(false);
             var executionEnd = DateTime.UtcNow;
 
             Console.WriteLine($"Upload Took {sendEnd - sendStart}");
@@ -199,6 +199,7 @@ namespace Fun
 
         private static async Task QueueSemantics()
         {
+            // const string unitTestFilePath = @"P:\roslyn\artifacts\bin\Microsoft.CodeAnalysis.CSharp.Emit.UnitTests\Debug\net472\Microsoft.CodeAnalysis.CSharp.Emit.UnitTests.dll";
             const string unitTestFilePath = @"P:\roslyn\artifacts\bin\Microsoft.CodeAnalysis.CSharp.Emit.UnitTests\Debug\net472\Microsoft.CodeAnalysis.CSharp.Emit.UnitTests.dll";
             var unitTestFileName = Path.GetFileName(unitTestFilePath);
             var unitTestDirectory = Path.GetDirectoryName(unitTestFilePath);
