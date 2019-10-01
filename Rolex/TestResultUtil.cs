@@ -18,6 +18,11 @@ namespace Rolex
             Container = new CloudBlobContainer(uri);
         }
 
+        internal TestResultUtil(Uri uri)
+        {
+            Container = new CloudBlobContainer(uri);
+        }
+
         internal TestResultUtil(CloudBlobContainer container)
         {
             Container = container;

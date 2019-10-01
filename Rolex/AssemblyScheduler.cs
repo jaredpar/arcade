@@ -8,7 +8,7 @@ using System.Reflection.PortableExecutable;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace RunTests
+namespace Rolex
 {
     internal readonly struct AssemblyPartitionInfo
     {
