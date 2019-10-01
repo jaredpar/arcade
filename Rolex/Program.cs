@@ -66,6 +66,8 @@ namespace Fun
 
         internal static async Task Scratch()
         {
+            var list = await XUnitUtil.ReadSummariesAsync(@"P:\temp\helix\Microsoft.CodeAnalysis.CSharp.Emit.UnitTests.001\Microsoft.CodeAnalysis.CSharp.Emit.UnitTests.dll.001.xml");
+
             var client = new CloudBlobContainer(new Uri("https://helixre107v0xdeko0k025g8.blob.core.windows.net/results-ff35de0c6adb4b4cb6?sv=2018-03-28&sr=c&sig=F2pS5%2BF5XUB6FaJBurbbip4UHu5OqJ5Zd3lyeBdvCzc%3D&se=2019-10-10T20%3A48%3A42Z&sp=rl"));
             var util = new TestResultUtil(client);
             await util.DownloadAsync(@"p:\temp\helix");
