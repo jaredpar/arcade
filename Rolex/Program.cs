@@ -19,6 +19,8 @@ namespace Fun
     internal static class Program
     {
         // private static readonly string TestResourceDllName = "Microsoft.CodeAnalysis.Test.Resources.Proprietary.dll";
+        // TODO: pick a better name
+        private static readonly string TestResultsDirectory = @"p:\temp\helix";
 
         internal static async Task Main(string[] args)
         {
@@ -87,6 +89,18 @@ namespace Fun
             var executionStart = DateTime.UtcNow;
             await helixApi.Job.WaitForJobAsync(sentJob.CorrelationId, pollingIntervalMs: 5000).ConfigureAwait(false);
             var executionEnd = DateTime.UtcNow;
+
+            Console.WriteLine("Downloading result files");
+            var util = new TestResultUtil(sentJob);
+
+            if (Directory.Exists(TestResultsDirectory))
+            {
+                Directory.Delete(TestResultsDirectory, recursive: true);
+            }
+            Directory.CreateDirectory(TestResultsDirectory);
+            await util.DownloadAsync(TestResultsDirectory).ConfigureAwait(false);
+
+
 
             Console.WriteLine($"Upload Took {sendEnd - sendStart}");
             Console.WriteLine($"Execution Took {executionEnd - executionStart}");
