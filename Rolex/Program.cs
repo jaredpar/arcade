@@ -65,10 +65,19 @@ namespace Rolex
 
         internal static async Task Scratch()
         {
-            var dllFilePath = @"P:\roslyn\artifacts\bin\Microsoft.CodeAnalysis.CSharp.CommandLine.UnitTests\Debug\net472\Microsoft.CodeAnalysis.CSharp.CommandLine.UnitTests.dll";
             var util = new RoslynHelixUtil(Console.WriteLine);
-            var helixJob = await util.QueueAsync(dllFilePath).ConfigureAwait(false);
-            await Run(helixJob);
+            var list = await util.QueueAllAsync(@"p:\roslyn", "Debug").ConfigureAwait(false);
+
+            if (Directory.Exists(TestResultsDirectory))
+            {
+                Directory.Delete(TestResultsDirectory, recursive: true);
+            }
+            Directory.CreateDirectory(TestResultsDirectory);
+
+            foreach (var helixJob in list)
+            {
+                await Run(helixJob);
+            }
             /*
             await PrintSummaries();
             var list = await XUnitUtil.ReadSummariesAsync(@"P:\temp\helix\Microsoft.CodeAnalysis.CSharp.Emit.UnitTests.001\Microsoft.CodeAnalysis.CSharp.Emit.UnitTests.dll.001.xml");
@@ -88,14 +97,9 @@ namespace Rolex
             await job.HelixApi.Job.WaitForJobAsync(job.CorrelationId, pollingIntervalMs: 5000).ConfigureAwait(false);
             var executionEnd = DateTime.UtcNow;
 
-            Console.WriteLine("Downloading result files");
+            Console.WriteLine($"Downloading result files {job.DisplayName}");
             var util = new TestResultUtil(job.ContainerUri);
 
-            if (Directory.Exists(TestResultsDirectory))
-            {
-                Directory.Delete(TestResultsDirectory, recursive: true);
-            }
-            Directory.CreateDirectory(TestResultsDirectory);
             await util.DownloadAsync(TestResultsDirectory).ConfigureAwait(false);
             await PrintSummaries().ConfigureAwait(false);
 

@@ -2,7 +2,9 @@ using Microsoft.DotNet.Helix.Client;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -38,7 +40,7 @@ namespace Rolex
     /// </summary>
     internal sealed class RoslynHelixUtil
     {
-        //  private static readonly string TestResourceDllName = "Microsoft.CodeAnalysis.Test.Resources.Proprietary.dll";
+        private static readonly string TestResourceDllName = "Microsoft.CodeAnalysis.Test.Resources.Proprietary.dll";
         private static readonly string SourceName = "RoslynUnitTests";
         private static readonly string TypeName = "test/unit";
         private static readonly string CreatorName = Environment.GetEnvironmentVariable("USERNAME");
@@ -50,6 +52,73 @@ namespace Rolex
         internal RoslynHelixUtil(Action<string> logger = null)
         {
             _logger = logger;
+        }
+
+        internal async Task<List<HelixJob>> QueueAllAsync(string roslynRoot, string configuration)
+        {
+            var list = new List<HelixJob>();
+            var unitTestFilePaths = GetUnitTestFilePaths();
+            var flatList = new List<string>();
+
+            foreach (var unitTestFilePath in unitTestFilePaths)
+            {
+                if (UsePartitions(unitTestFilePath))
+                {
+                    var job = await QueuePartitionedAsync(unitTestFilePath).ConfigureAwait(false);
+                    list.Add(job);
+                }
+                else
+                {
+                    flatList.Add(unitTestFilePath);
+                }
+            }
+
+            if (flatList.Count > 0)
+            {
+                var job = await QueueAsync(flatList.ToArray()).ConfigureAwait(false);
+                list.Add(job);
+            }
+
+            return list;
+
+            List<string> GetUnitTestFilePaths()
+            {
+                var binDir = Path.Combine(roslynRoot, "artifacts", "bin");
+                var list = new List<string>();
+                foreach (var directory in Directory.EnumerateDirectories(binDir, "*UnitTests"))
+                {
+                    var desktopDirectory = Path.Combine(directory, configuration, "net472");
+                    if (!Directory.Exists(desktopDirectory))
+                    {
+                        continue;
+                    }
+
+                    var unitTestFilePath = Directory.EnumerateFiles(desktopDirectory, "*.UnitTests.dll").FirstOrDefault();
+                    if (unitTestFilePath is object)
+                    {
+                        list.Add(unitTestFilePath);
+                    }
+                }
+
+                return list;
+            }
+
+            static bool UsePartitions(string unitTestFilePath)
+            {
+                var unitTestFileName = Path.GetFileName(unitTestFilePath);
+                if (unitTestFileName == "Microsoft.CodeAnalysis.CSharp.Emit.UnitTests.dll" ||
+                    unitTestFileName == "Microsoft.CodeAnalysis.CSharp.Semantic.UnitTests.dll" ||
+                    unitTestFileName == "Microsoft.CodeAnalysis.EditorFeatures.UnitTests.dll" ||
+                    unitTestFileName == "Microsoft.CodeAnalysis.EditorFeatures2.UnitTests.dll" ||
+                    unitTestFileName == "Microsoft.VisualStudio.LanguageServices.UnitTests.dll" ||
+                    unitTestFileName == "Microsoft.CodeAnalysis.CSharp.EditorFeatures.UnitTests.dll" ||
+                    unitTestFileName == "Microsoft.CodeAnalysis.VisualBasic.EditorFeatures.UnitTests.dll")
+                {
+                    return true;
+                }
+
+                return false;
+            }
         }
 
         /// <summary>
@@ -72,6 +141,7 @@ namespace Rolex
                 .WithTargetQueue(QueueName)
                 .WithSource(SourceName)
                 .WithCreator(CreatorName);
+            var hasAdddeCorrelation = false;
 
             // TODO: use the correlation payload resource DLL
             var workItemNames = new List<string>();
@@ -80,19 +150,57 @@ namespace Rolex
                 var unitTestDirectory = Path.GetDirectoryName(unitTestFilePath);
                 PrepXunit(unitTestDirectory);
                 var displayName = Path.GetFileNameWithoutExtension(Path.GetFileName(unitTestFilePath));
-                var batchFileName = EnsureBatchFile(unitTestFilePath);
+                var usesTestResources = UsesTestResources(unitTestDirectory);
+                var batchFileName = EnsureBatchFile(unitTestFilePath, usesTestResources);
                 workItemNames.Add(displayName);
-                job = job
-                    .DefineWorkItem(displayName)
-                    .WithCommand(@$"cmd /c {batchFileName}")
-                    .WithDirectoryPayload(unitTestDirectory)
-                    .WithTimeout(TimeSpan.FromMinutes(15))
-                    .AttachToJob();
+
+                if (usesTestResources)
+                {
+                    var comparer = StringComparer.OrdinalIgnoreCase;
+                    var filePaths = Directory
+                        .GetFiles(unitTestDirectory, "*", SearchOption.AllDirectories)
+                        .Where(x => !comparer.Equals(TestResourceDllName, Path.GetFileName(x)))
+                        .ToArray();
+                    job = job
+                        .DefineWorkItem(displayName)
+                        .WithCommand(@$"cmd /c {batchFileName}")
+                        .WithFiles(filePaths)
+                        .WithTimeout(TimeSpan.FromMinutes(15))
+                        .AttachToJob();
+                }
+                else
+                {
+                    job = job
+                        .DefineWorkItem(displayName)
+                        .WithCommand(@$"cmd /c {batchFileName}")
+                        .WithDirectoryPayload(unitTestDirectory)
+                        .WithTimeout(TimeSpan.FromMinutes(15))
+                        .AttachToJob();
+                }
             }
 
-            return await    SendAsync(api, job, "Multiple", workItemNames).ConfigureAwait(false);
+            return await SendAsync(api, job, "Multiple", workItemNames).ConfigureAwait(false);
 
-            static string EnsureBatchFile(string unitTestFilePath)
+            bool UsesTestResources(string unitTestDirectory)
+            {
+                var filePath = Directory
+                    .EnumerateFiles(unitTestDirectory, TestResourceDllName, SearchOption.TopDirectoryOnly)
+                    .FirstOrDefault();
+                if (filePath is object)
+                {
+                    if (!hasAdddeCorrelation)
+                    {
+                        job = job.WithCorrelationPayloadArchive(filePath);
+                        hasAdddeCorrelation = true;
+                    }
+
+                    return true;
+                }
+
+                return false;
+            }
+
+            static string EnsureBatchFile(string unitTestFilePath, bool usesUnitTestResources)
             {
                 var unitTestFileName = Path.GetFileName(unitTestFilePath);
                 var uploadEnvironmentName = "%HELIX_WORKITEM_UPLOAD_ROOT%";
@@ -102,6 +210,11 @@ namespace Rolex
                 var batchFileName = $"xunit.cmd";
                 var batchFilePath = Path.Combine(Path.GetDirectoryName(unitTestFilePath), batchFileName);
                 var batchContent = @$".\xunit.console.exe {unitTestFileName} -html {htmlFilePath} -xml {xmlFilePath}";
+
+                if (usesUnitTestResources)
+                {
+                    batchContent = @$"cp %HELIX_CORRELATION_PAYLOAD%\{TestResourceDllName} ." + Environment.NewLine + batchContent;
+                }
 
                 WriteFileContentIfDifferent(batchFilePath, batchContent);
                 return batchFileName;

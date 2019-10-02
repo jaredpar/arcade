@@ -47,14 +47,17 @@ namespace Rolex
             var list = new List<XUnitAssemblySummary>();
             foreach (var element in document.Root.Elements("assembly"))
             {
-                var summary = new XUnitAssemblySummary(
-                    element.Attribute("name").Value,
-                    int.Parse(element.Attribute("passed").Value),
-                    int.Parse(element.Attribute("skipped").Value),
-                    int.Parse(element.Attribute("failed").Value),
-                    TimeSpan.FromSeconds(double.Parse(element.Attribute("time").Value)),
-                    int.Parse(element.Attribute("errors").Value));
-                list.Add(summary);
+                if (element.Attribute("passed") is object)
+                {
+                    var summary = new XUnitAssemblySummary(
+                        element.Attribute("name").Value,
+                        int.Parse(element.Attribute("passed").Value),
+                        int.Parse(element.Attribute("skipped").Value),
+                        int.Parse(element.Attribute("failed").Value),
+                        TimeSpan.FromSeconds(double.Parse(element.Attribute("time").Value)),
+                        int.Parse(element.Attribute("errors").Value));
+                    list.Add(summary);
+                }
             }
 
             return list;
