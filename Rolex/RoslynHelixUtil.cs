@@ -146,7 +146,8 @@ namespace Rolex
 
             // TODO: use the correlation payload resource DLL
             var workItemNames = new List<string>();
-            var zipFilePaths = new List<string>();
+            var zipDirectory = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+            Directory.CreateDirectory(zipFolder);
             try
             {
                 foreach (var unitTestFilePath in unitTestFilePaths)
@@ -170,9 +171,9 @@ namespace Rolex
                             .Where(x => !comparer.Equals(TestResourceDllName, Path.GetFileName(x)))
                             .ToArray();
                             */
-                        var zipFilePath = Path.GetTempFileName();
+                        var unitTestFileName = Path.GetFileName(unitTestFilePath);
+                        var zipFilePath = Path.Combine(zipDirectory, Path.ChangeExtension(unitTestFileName, ".zip"));
                         ZipDirectory(zipFilePath, unitTestDirectory, TestResourceDllName);
-                        zipFilePaths.Add(zipFilePath);
                         job = job
                             .DefineWorkItem(displayName)
                             .WithCommand(@$"cmd /c {batchFileName}")
@@ -196,10 +197,7 @@ namespace Rolex
             finally
             {
                 // TODO: clean this up when the helix bug is fixed https://github.com/dotnet/arcade/issues/4045
-                foreach (var zipFilePath in zipFilePaths)
-                {
-                    File.Delete(zipFilePath);
-                }
+                Directory.Delete(zipDirectory, recursive: true);
             }
 
             bool UsesTestResources(string unitTestDirectory)
