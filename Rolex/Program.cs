@@ -65,20 +65,21 @@ namespace Rolex
 
         internal static async Task Scratch()
         {
-            var util = new RoslynHelixUtil(Console.WriteLine);
-            var list = await util.QueueAllAsync(@"p:\roslyn", "Debug").ConfigureAwait(false);
-
             if (Directory.Exists(TestResultsDirectory))
             {
                 Directory.Delete(TestResultsDirectory, recursive: true);
             }
             Directory.CreateDirectory(TestResultsDirectory);
 
+            var util = new RoslynHelixUtil(Console.WriteLine);
+            var list = await util.QueueAllAsync(@"p:\roslyn", "Debug").ConfigureAwait(false);
+
             foreach (var helixJob in list)
             {
                 await Run(helixJob);
             }
             /*
+            RoslynHelixUtil.ZipDirectory(@"p:\temp\test.zip", @"P:\roslyn\artifacts\bin\Microsoft.Build.Tasks.CodeAnalysis.UnitTests\Debug\net472", RoslynHelixUtil.TestResourceDllName);
             await PrintSummaries();
             var list = await XUnitUtil.ReadSummariesAsync(@"P:\temp\helix\Microsoft.CodeAnalysis.CSharp.Emit.UnitTests.001\Microsoft.CodeAnalysis.CSharp.Emit.UnitTests.dll.001.xml");
 

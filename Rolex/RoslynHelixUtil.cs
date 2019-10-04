@@ -2,6 +2,7 @@ using Microsoft.DotNet.Helix.Client;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
@@ -40,7 +41,7 @@ namespace Rolex
     /// </summary>
     internal sealed class RoslynHelixUtil
     {
-        private static readonly string TestResourceDllName = "Microsoft.CodeAnalysis.Test.Resources.Proprietary.dll";
+        internal static readonly string TestResourceDllName = "Microsoft.CodeAnalysis.Test.Resources.Proprietary.dll";
         private static readonly string SourceName = "RoslynUnitTests";
         private static readonly string TypeName = "test/unit";
         private static readonly string CreatorName = Environment.GetEnvironmentVariable("USERNAME");
@@ -145,41 +146,61 @@ namespace Rolex
 
             // TODO: use the correlation payload resource DLL
             var workItemNames = new List<string>();
-            foreach (var unitTestFilePath in unitTestFilePaths)
+            var zipFilePaths = new List<string>();
+            try
             {
-                var unitTestDirectory = Path.GetDirectoryName(unitTestFilePath);
-                PrepXunit(unitTestDirectory);
-                var displayName = Path.GetFileNameWithoutExtension(Path.GetFileName(unitTestFilePath));
-                var usesTestResources = UsesTestResources(unitTestDirectory);
-                var batchFileName = EnsureBatchFile(unitTestFilePath, usesTestResources);
-                workItemNames.Add(displayName);
+                foreach (var unitTestFilePath in unitTestFilePaths)
+                {
+                    var unitTestDirectory = Path.GetDirectoryName(unitTestFilePath);
+                    PrepXunit(unitTestDirectory);
+                    var displayName = Path.GetFileNameWithoutExtension(Path.GetFileName(unitTestFilePath));
+                    var usesTestResources = UsesTestResources(unitTestDirectory);
+                    var batchFileName = EnsureBatchFile(unitTestFilePath, usesTestResources);
+                    workItemNames.Add(displayName);
 
-                if (usesTestResources)
-                {
-                    var comparer = StringComparer.OrdinalIgnoreCase;
-                    var filePaths = Directory
-                        .GetFiles(unitTestDirectory, "*", SearchOption.AllDirectories)
-                        .Where(x => !comparer.Equals(TestResourceDllName, Path.GetFileName(x)))
-                        .ToArray();
-                    job = job
-                        .DefineWorkItem(displayName)
-                        .WithCommand(@$"cmd /c {batchFileName}")
-                        .WithFiles(filePaths)
-                        .WithTimeout(TimeSpan.FromMinutes(15))
-                        .AttachToJob();
+                    if (usesTestResources)
+                    {
+                        // TODO: https://github.com/dotnet/arcade/issues/4045
+                        // Until that is fixed I need to zip the files locally so that they unzip properly when 
+                        // run on the target machine.
+                        /*
+                        var comparer = StringComparer.OrdinalIgnoreCase;
+                        var filePaths = Directory
+                            .GetFiles(unitTestDirectory, "*", SearchOption.AllDirectories)
+                            .Where(x => !comparer.Equals(TestResourceDllName, Path.GetFileName(x)))
+                            .ToArray();
+                            */
+                        var zipFilePath = Path.GetTempFileName();
+                        ZipDirectory(zipFilePath, unitTestDirectory, TestResourceDllName);
+                        zipFilePaths.Add(zipFilePath);
+                        job = job
+                            .DefineWorkItem(displayName)
+                            .WithCommand(@$"cmd /c {batchFileName}")
+                            .WithFiles(zipFilePath)
+                            .WithTimeout(TimeSpan.FromMinutes(15))
+                            .AttachToJob();
+                    }
+                    else
+                    {
+                        job = job
+                            .DefineWorkItem(displayName)
+                            .WithCommand(@$"cmd /c {batchFileName}")
+                            .WithDirectoryPayload(unitTestDirectory)
+                            .WithTimeout(TimeSpan.FromMinutes(15))
+                            .AttachToJob();
+                    }
                 }
-                else
+
+                return await SendAsync(api, job, "Multiple", workItemNames).ConfigureAwait(false);
+            }
+            finally
+            {
+                // TODO: clean this up when the helix bug is fixed https://github.com/dotnet/arcade/issues/4045
+                foreach (var zipFilePath in zipFilePaths)
                 {
-                    job = job
-                        .DefineWorkItem(displayName)
-                        .WithCommand(@$"cmd /c {batchFileName}")
-                        .WithDirectoryPayload(unitTestDirectory)
-                        .WithTimeout(TimeSpan.FromMinutes(15))
-                        .AttachToJob();
+                    File.Delete(zipFilePath);
                 }
             }
-
-            return await SendAsync(api, job, "Multiple", workItemNames).ConfigureAwait(false);
 
             bool UsesTestResources(string unitTestDirectory)
             {
@@ -325,6 +346,26 @@ cd %HELIX_CORRELATION_PAYLOAD%
 
             File.WriteAllText(filePath, content);
             return true;
+        }
+
+        internal static void ZipDirectory(string destFilePath, string directory, string excludeFileName)
+        {
+            using var fileStream = new FileStream(destFilePath, FileMode.Create, FileAccess.ReadWrite);
+            using var archive = new ZipArchive(fileStream, ZipArchiveMode.Create);
+
+            if (directory.EndsWith(Path.DirectorySeparatorChar))
+            {
+                directory = directory.Substring(0, directory.Length - 1);
+            }
+
+            foreach (var filePath in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+            {
+                if (File.Exists(filePath))
+                {
+                    var entryName = filePath.Substring(directory.Length + 1).Replace('\\', '/');
+                    _ = archive.CreateEntryFromFile(filePath, entryName);
+                }
+            }
         }
 
         /// <summary>
