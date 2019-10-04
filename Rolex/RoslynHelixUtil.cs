@@ -45,8 +45,9 @@ namespace Rolex
         private static readonly string SourceName = "RoslynUnitTests";
         private static readonly string TypeName = "test/unit";
         private static readonly string CreatorName = Environment.GetEnvironmentVariable("USERNAME");
-        private static readonly string QueueName = "Windows.10.Amd64.Open";
+        // private static readonly string QueueName = "Windows.10.Amd64.Open";
         // private static readonly string QueueName = "Windows.10.Amd64.CLientRS5.Open";
+        private static readonly string QueueName = "Windows.10.Amd64.CLientRS4.Open";
 
         private readonly Action<string> _logger;
 
@@ -147,7 +148,7 @@ namespace Rolex
             // TODO: use the correlation payload resource DLL
             var workItemNames = new List<string>();
             var zipDirectory = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-            Directory.CreateDirectory(zipFolder);
+            Directory.CreateDirectory(zipDirectory);
             try
             {
                 foreach (var unitTestFilePath in unitTestFilePaths)
@@ -177,7 +178,7 @@ namespace Rolex
                         job = job
                             .DefineWorkItem(displayName)
                             .WithCommand(@$"cmd /c {batchFileName}")
-                            .WithFiles(zipFilePath)
+                            .WithArchivePayload(zipFilePath)
                             .WithTimeout(TimeSpan.FromMinutes(15))
                             .AttachToJob();
                     }
@@ -209,7 +210,7 @@ namespace Rolex
                 {
                     if (!hasAdddeCorrelation)
                     {
-                        job = job.WithCorrelationPayloadArchive(filePath);
+                        job = job.WithCorrelationPayloadFiles(filePath);
                         hasAdddeCorrelation = true;
                     }
 

@@ -65,19 +65,13 @@ namespace Rolex
 
         internal static async Task Scratch()
         {
-            if (Directory.Exists(TestResultsDirectory))
-            {
-                Directory.Delete(TestResultsDirectory, recursive: true);
-            }
-            Directory.CreateDirectory(TestResultsDirectory);
-
             var util = new RoslynHelixUtil(Console.WriteLine);
+            var uploadStart = DateTime.UtcNow;
             var list = await util.QueueAllAsync(@"p:\roslyn", "Debug").ConfigureAwait(false);
+            Console.WriteLine($"Upload took {DateTime.UtcNow - uploadStart}");
+            var display = new HelixJobDisplay(TestResultsDirectory);
+            await display.Display(list).ConfigureAwait(false);
 
-            foreach (var helixJob in list)
-            {
-                await Run(helixJob);
-            }
             /*
             RoslynHelixUtil.ZipDirectory(@"p:\temp\test.zip", @"P:\roslyn\artifacts\bin\Microsoft.Build.Tasks.CodeAnalysis.UnitTests\Debug\net472", RoslynHelixUtil.TestResourceDllName);
             await PrintSummaries();
@@ -87,47 +81,6 @@ namespace Rolex
             var util = new TestResultUtil(client);
             await util.DownloadAsync(@"p:\temp\helix");
             */
-        }
-
-        private static async Task Run(HelixJob job)
-        {
-            Console.WriteLine(job.CorrelationId);
-            Console.WriteLine(job.ContainerUri);
-
-            var executionStart = DateTime.UtcNow;
-            await job.HelixApi.Job.WaitForJobAsync(job.CorrelationId, pollingIntervalMs: 5000).ConfigureAwait(false);
-            var executionEnd = DateTime.UtcNow;
-
-            Console.WriteLine($"Downloading result files {job.DisplayName}");
-            var util = new TestResultUtil(job.ContainerUri);
-
-            await util.DownloadAsync(TestResultsDirectory).ConfigureAwait(false);
-            await PrintSummaries().ConfigureAwait(false);
-
-            Console.WriteLine($"Execution Took {executionEnd - executionStart}");
-        }
-
-        private static async Task PrintSummaries()
-        {
-            var list = await GetSummaries(TestResultsDirectory).ConfigureAwait(false);
-            Console.WriteLine($"Tests run: {list.Sum(x => x.TestsTotal)}");
-            Console.WriteLine($"Tests passed: {list.Sum(x => x.TestsPassed)}");
-            Console.WriteLine($"Tests skipped: {list.Sum(x => x.TestsSkipped)}");
-            Console.WriteLine($"Tests failed: {list.Sum(x => x.TestsFailed)}");
-            Console.WriteLine($"Max test run time: {list.Max(x => x.ExecutionTime)}");
-            Console.WriteLine($"Min test run time: {list.Min(x => x.ExecutionTime)}");
-
-            static async Task<List<XUnitAssemblySummary>> GetSummaries(string testResultDirectory)
-            {
-                var list = new List<XUnitAssemblySummary>();
-                foreach (var xmlFilePath in Directory.EnumerateFiles(testResultDirectory, "*.xml", SearchOption.AllDirectories))
-                {
-                    var fileList = await XUnitUtil.ReadSummariesAsync(xmlFilePath).ConfigureAwait(false);
-                    list.AddRange(fileList);
-                }
-
-                return list;
-            }
         }
 
         /*
