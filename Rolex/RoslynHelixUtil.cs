@@ -45,14 +45,15 @@ namespace Rolex
         private static readonly string SourceName = "RoslynUnitTests";
         private static readonly string TypeName = "test/unit";
         private static readonly string CreatorName = Environment.GetEnvironmentVariable("USERNAME");
-        // private static readonly string QueueName = "Windows.10.Amd64.Open";
-        // private static readonly string QueueName = "Windows.10.Amd64.CLientRS5.Open";
-        private static readonly string QueueName = "Windows.10.Amd64.CLientRS4.Open";
 
+        internal IHelixApi HelixApi { get; }
+        private readonly string _queueId;
         private readonly Action<string> _logger;
 
-        internal RoslynHelixUtil(Action<string> logger = null)
+        internal RoslynHelixUtil(IHelixApi helixApi, string queueId, Action<string> logger = null)
         {
+            HelixApi = helixApi;
+            _queueId = queueId;
             _logger = logger;
         }
 
@@ -135,12 +136,11 @@ namespace Rolex
                 throw new ArgumentException(nameof(unitTestFilePaths));
             }
 
-            var api = ApiFactory.GetAnonymous();
-            var job = api
+            var job = HelixApi
                 .Job
                 .Define()
                 .WithType(TypeName)
-                .WithTargetQueue(QueueName)
+                .WithTargetQueue(_queueId)
                 .WithSource(SourceName)
                 .WithCreator(CreatorName);
             var hasAdddeCorrelation = false;
@@ -193,7 +193,7 @@ namespace Rolex
                     }
                 }
 
-                return await SendAsync(api, job, "Multiple", workItemNames).ConfigureAwait(false);
+                return await SendAsync(HelixApi, job, "Multiple", workItemNames).ConfigureAwait(false);
             }
             finally
             {
@@ -262,12 +262,11 @@ namespace Rolex
 
             PrepXunit(unitTestDirectory);
 
-            var api = ApiFactory.GetAnonymous();
-            var job = api
+            var job = HelixApi
                 .Job
                 .Define()
                 .WithType(TypeName)
-                .WithTargetQueue(QueueName)
+                .WithTargetQueue(_queueId)
                 .WithSource(SourceName)
                 .WithCreator(CreatorName)
                 .WithCorrelationPayloadDirectory(unitTestDirectory);
@@ -286,7 +285,7 @@ namespace Rolex
                 workItemNames.Add(displayName);
             }
 
-            return await SendAsync(api, job, unitTestFileName, workItemNames).ConfigureAwait(false);
+            return await SendAsync(HelixApi, job, unitTestFileName, workItemNames).ConfigureAwait(false);
 
             static string GetPartitionId(int id) => id.ToString("D3");
 

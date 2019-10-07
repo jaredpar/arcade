@@ -11,6 +11,7 @@ using Microsoft.Data.Edm.Library;
 using System.Runtime.CompilerServices;
 using Microsoft.Azure.Storage.Blob.Protocol;
 using Microsoft.Azure.Storage.Blob;
+using Microsoft.DotNet.Helix.Client.Models;
 
 namespace Rolex
 {
@@ -65,12 +66,18 @@ namespace Rolex
 
         internal static async Task Scratch()
         {
-            var util = new RoslynHelixUtil(Console.WriteLine);
+            var helixApi = ApiFactory.GetAnonymous();
+            var queueInfo = await RolexUtil.FindQueueInfoAsync(helixApi).ConfigureAwait(false);
+            Console.WriteLine($"Using {queueInfo.QueueId}");
+
+            var start = DateTime.UtcNow;
+            var util = new RoslynHelixUtil(helixApi, queueInfo.QueueId, Console.WriteLine);
             var uploadStart = DateTime.UtcNow;
             var list = await util.QueueAllAsync(@"p:\roslyn", "Debug").ConfigureAwait(false);
             Console.WriteLine($"Upload took {DateTime.UtcNow - uploadStart}");
             var display = new HelixJobDisplay(TestResultsDirectory);
             await display.Display(list).ConfigureAwait(false);
+            Console.WriteLine($"Total time {DateTime.UtcNow - start}");
 
             /*
             RoslynHelixUtil.ZipDirectory(@"p:\temp\test.zip", @"P:\roslyn\artifacts\bin\Microsoft.Build.Tasks.CodeAnalysis.UnitTests\Debug\net472", RoslynHelixUtil.TestResourceDllName);
@@ -82,6 +89,7 @@ namespace Rolex
             await util.DownloadAsync(@"p:\temp\helix");
             */
         }
+
 
         /*
          * 

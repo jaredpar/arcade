@@ -72,5 +72,19 @@ namespace Rolex
                     throw new Exception($"Did not recognize blob type {item.GetType()}");
             }
         }
+
+        internal static TimeSpan Sum<T>(this IEnumerable<T> e, Func<T, TimeSpan> func) =>
+            e.Select(func).Sum();
+
+        internal static TimeSpan Sum(this IEnumerable<TimeSpan> e)
+        {
+            var sum = TimeSpan.Zero;
+            foreach (var timespan in e)
+            {
+                sum += timespan;
+            }
+
+            return sum;
+        }
     }
 }
