@@ -7,3 +7,9 @@ the assemblies
 hidden.
 - Need to surface how long each test run takes for the non-partitioned assemblies
 so that I know what I can partition better in the future.
+
+# Helix API Feedback
+
+## IHelixApi
+- Should be possible to determine if it's anonymous or not.
+- Every parameter named `job` should be called `correlationId` instead

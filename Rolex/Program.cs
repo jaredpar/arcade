@@ -12,59 +12,85 @@ using System.Runtime.CompilerServices;
 using Microsoft.Azure.Storage.Blob.Protocol;
 using Microsoft.Azure.Storage.Blob;
 using Microsoft.DotNet.Helix.Client.Models;
+using Mono.Options;
 
 namespace Rolex
 {
     internal static class Program
     {
-        // private static readonly string TestResourceDllName = "Microsoft.CodeAnalysis.Test.Resources.Proprietary.dll";
-        // TODO: pick a better name
-        private static readonly string TestResultsDirectory = @"p:\temp\helix";
+        private const int ExitSuccess = 0;
+        private const int ExitFailure = 1;
 
-        internal static async Task Main(string[] args)
+        internal static async Task<int> Main(string[] args)
         {
-            await Scratch();
+            await Scratch().ConfigureAwait(false);
 
+            var optionSet = new OptionSet()
+            {
+            };
 
-            /*
-            var (helixApi, job) = QueueUnitTests();
-            var sentJobTask = job.SendAsync(Console.WriteLine);
-            var sentJob = await sentJobTask.ConfigureAwait(false);
-            Console.WriteLine(sentJob.CorrelationId);
-            Console.WriteLine(sentJob.ResultsContainerUri);
-            Console.WriteLine(sentJob.ResultsContainerReadSAS);
-            Console.WriteLine(sentJob.ResultsContainerUri + sentJob.ResultsContainerReadSAS);
+            List<string> extraOptions;
+            try
+            {
+                extraOptions = optionSet.Parse(args);
+            }
+            catch (OptionException ex)
+            {
+                Console.WriteLine(ex.Message);
+                Console.WriteLine("Try --help for more information");
+                return ExitFailure;
+            }
 
-            var start = DateTime.UtcNow;
-            await helixApi.Job.WaitForJobAsync(sentJob.CorrelationId).ConfigureAwait(false);
+            var rolexStorage = new RolexStorage();
+            try
+            {
+                if (extraOptions.Count == 0)
+                {
+                    extraOptions = new List<string>(new[] { "queue" });
+                }
 
-            Console.WriteLine($"Execution Took {DateTime.UtcNow - start}");
+                var option = extraOptions[0].ToLower();
+                switch (option)
+                {
+                    case "list": 
+                        List(rolexStorage);
+                        break;
+                    default:
+                        throw new Exception($"Unrecognized option {option}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+                ShowHelp(optionSet);
+                return ExitFailure;
+            }
 
-            var token = await GetToken("helix").ConfigureAwait(false);
-            var api = ApiFactory.GetAuthenticated(token);
-            var source = "test/payload";
-            var workItemName = "hello-world";
-            var jobTask = api
-                .Job
-                .Define()
-                .WithType("test/helloworld")
-                .WithTargetQueue("Windows.10.Amd64.ClientRS5")
-                .WithSource(source)
-                .DefineWorkItem(workItemName)
-                .WithCommand("cmd /c command.bat")
-                .WithDirectoryPayload(@"p:\temp\arcade")
-                //.WithEmptyPayload()
-                .AttachToJob()
-                .WithCreator("jaredpar")
-                .SendAsync();
-            var stream = await api.WorkItem.ConsoleLogAsync(workItemName, job.CorrelationId).ConfigureAwait(false);
-            using var reader = new StreamReader(stream);
-            var text = await reader.ReadToEndAsync().ConfigureAwait(false);
-            Console.WriteLine(text);
-            */
+            return ExitSuccess;
+
+            static void List(RolexStorage rolexStorage)
+            {
+                var all = rolexStorage.ListNames();
+                foreach (var name in all)
+                {
+                    Console.WriteLine(name);
+                }
+
+                Console.WriteLine($"{all.Count} jobs");
+            }
+        }
+
+        private static void ShowHelp(OptionSet optionSet)
+        {
+            // TODO: implement
         }
 
         internal static async Task Scratch()
+        {
+            await Task.Yield();
+        }
+
+        internal static async Task Scratch2()
         {
             var helixApi = ApiFactory.GetAnonymous();
             var queueInfo = await RolexUtil.FindQueueInfoAsync(helixApi).ConfigureAwait(false);
@@ -75,7 +101,9 @@ namespace Rolex
             var uploadStart = DateTime.UtcNow;
             var list = await util.QueueAllAsync(@"p:\roslyn", "Debug").ConfigureAwait(false);
             Console.WriteLine($"Upload took {DateTime.UtcNow - uploadStart}");
-            var display = new HelixJobDisplay(TestResultsDirectory);
+
+            // TODO this is a hack, pick a real directory
+            var display = new HelixJobDisplay(@"p:\temp\helix");
             await display.Display(list).ConfigureAwait(false);
             Console.WriteLine($"Total time {DateTime.UtcNow - start}");
 
@@ -89,127 +117,5 @@ namespace Rolex
             await util.DownloadAsync(@"p:\temp\helix");
             */
         }
-
-
-        /*
-         * 
-        internal static (IHelixApi HelixApi, IJobDefinition JobDefinition) QueueUnitTests()
-        {
-            var api = ApiFactory.GetAnonymous();
-            var job = api
-                .Job
-                .Define()
-                .WithType("test/unit")
-                // .WithTargetQueue("Windows.10.Amd64.Open")
-                .WithTargetQueue("Windows.10.Amd64.ClientRS5.Open")
-                .WithSource("RoslynUnitTests")
-                .WithCreator("jaredpar");
-
-            var scheduler = new AssemblyScheduler(methodLimit: 500);
-            foreach (var directoryRoot in Directory.EnumerateDirectories(@"P:\roslyn\artifacts\bin", "*CSharp*.UnitTests"))
-            {
-                var directory = Path.Combine(directoryRoot, @"Debug\net472");
-                if (Directory.Exists(directory))
-                {
-                    Console.Write($"Queueing {directory} ... ");
-                    job = QueueUnitTest(job, scheduler, directory);
-                    Console.WriteLine("Done");
-                }
-            }
-
-            return (api, job);
-        }
-
-        internal static IJobDefinition QueueUnitTest(IJobDefinition job, AssemblyScheduler scheduler, string unitTestDirectory)
-        {
-            PrepXunit();
-
-            var unitTestFilePath = Directory.EnumerateFiles(unitTestDirectory, "*.UnitTests.dll").Single();
-            var unitTestFileName = Path.GetFileName(unitTestFilePath);
-            IEnumerable<AssemblyPartitionInfo> partitions;
-
-            if (unitTestFileName == "Microsoft.CodeAnalysis.CSharp.Emit.UnitTests.dll" ||
-                unitTestFileName == "Microsoft.CodeAnalysis.CSharp.Semantic.UnitTests.dll" ||
-                unitTestFileName == "Microsoft.CodeAnalysis.EditorFeatures.UnitTests.dll" ||
-                unitTestFileName == "Microsoft.CodeAnalysis.EditorFeatures2.UnitTests.dll" ||
-                unitTestFileName == "Microsoft.VisualStudio.LanguageServices.UnitTests.dll" ||
-                unitTestFileName == "Microsoft.CodeAnalysis.CSharp.EditorFeatures.UnitTests.dll" ||
-                unitTestFileName == "Microsoft.CodeAnalysis.VisualBasic.EditorFeatures.UnitTests.dll")
-            {
-                partitions = scheduler.Schedule(unitTestFilePath);
-            }
-            else
-            {
-                partitions = new[] { new AssemblyPartitionInfo(unitTestFilePath) };
-            }
-
-            var partitionId = 0;
-            foreach (var info in partitions)
-            {
-                job = QueueOne(job, info, partitionId);
-                partitionId++;
-            }
-
-            return job;
-
-            IJobDefinition QueueOne(IJobDefinition job, AssemblyPartitionInfo info, int partitionId)
-            {
-                var displayName = Path.GetFileNameWithoutExtension(unitTestFileName) + $".{partitionId}";
-                var batchFileName = EnsureBatchFile(info, partitionId);
-                return job
-                    .DefineWorkItem(displayName)
-                    .WithCommand(@$"cmd /c {batchFileName}")
-                    .WithDirectoryPayload(unitTestDirectory)
-                    .WithTimeout(TimeSpan.FromMinutes(15))
-                    .AttachToJob();
-            }
-
-            string EnsureBatchFile(AssemblyPartitionInfo info, int partitionId)
-            {
-                var uploadEnvironmentName = "%HELIX_WORKITEM_UPLOAD_ROOT%";
-                var partitionDirectoryName = $"Partition{partitionId}";
-                var xmlFilePath = @$"{uploadEnvironmentName}\{partitionDirectoryName}\{unitTestFileName}.xml";
-                var htmlFilePath = @$"{uploadEnvironmentName}\{partitionDirectoryName}\{unitTestFileName}.html";
-
-                var name = Path.GetDirectoryName(unitTestDirectory);
-                var batchFileName = $"xunit-{partitionId}.cmd";
-                var batchFilePath = Path.Combine(unitTestDirectory, batchFileName);
-                var batchContent = @$".\xunit.console.exe {unitTestFileName} -html {htmlFilePath} -xml {xmlFilePath} {info.ClassListArgumentString}";
-
-                try
-                {
-                    if (File.Exists(batchFilePath))
-                    {
-                        var currentContet = File.ReadAllText(batchFilePath);
-                        if (currentContet == batchContent)
-                        {
-                            // don't screw up payload caching by modifying the directory if the batch file has already
-                            // been laid down
-                            return batchFileName;
-                        }
-                    }
-                }
-                catch
-                {
-                    // Error reading the file, no problem, just rewrite it with current content
-                }
-
-                File.WriteAllText(Path.Combine(unitTestDirectory, batchFileName), batchContent);
-                return batchFileName;
-            }
-
-            void PrepXunit()
-            {
-                var xunitToolsDirectory = @"P:\nuget\xunit.runner.console\2.4.1\tools\net472";
-                foreach (var sourceFilePath in Directory.EnumerateFiles(xunitToolsDirectory))
-                {
-                    var destFileName = Path.GetFileName(sourceFilePath);
-                    var destFilePath = Path.Combine(unitTestDirectory, destFileName);
-                    File.Copy(sourceFilePath, destFilePath, overwrite: true);
-                }
-            }
-        }
-
-    */
     }
 }
