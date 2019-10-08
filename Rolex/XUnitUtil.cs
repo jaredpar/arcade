@@ -10,6 +10,7 @@ namespace Rolex
 {
     internal readonly struct XUnitAssemblySummary
     {
+        internal string ResultsFilePath { get; }
         internal string AssemblyPath { get; }
         internal int TestsPassed { get; }
         internal int TestsSkipped { get; }
@@ -20,6 +21,7 @@ namespace Rolex
         internal int TestsTotal => TestsPassed + TestsSkipped + TestsFailed;
 
         internal XUnitAssemblySummary(
+            string resultsFilePath,
             string assemblyPath,
             int testsPassed,
             int testsSkipped,
@@ -28,6 +30,7 @@ namespace Rolex
             int errors)
         {
             AssemblyPath = assemblyPath;
+            ResultsFilePath = resultsFilePath;
             TestsPassed = testsPassed;
             TestsSkipped = testsSkipped;
             TestsFailed = testsFailed;
@@ -50,6 +53,7 @@ namespace Rolex
                 if (element.Attribute("passed") is object)
                 {
                     var summary = new XUnitAssemblySummary(
+                        xmlFilePath,
                         element.Attribute("name").Value,
                         int.Parse(element.Attribute("passed").Value),
                         int.Parse(element.Attribute("skipped").Value),

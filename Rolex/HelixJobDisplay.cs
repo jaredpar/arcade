@@ -5,6 +5,7 @@ using System.IO;
 using System.Text;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Diagnostics;
 
 namespace Rolex
 {
@@ -65,6 +66,22 @@ namespace Rolex
             Console.WriteLine($"Total test execution time: {all.Sum(x => x.ExecutionTime)}");
             Console.WriteLine($"Local execution time: {DateTime.UtcNow - start}");
             Console.WriteLine($"Total download time: {total}");
+
+            DisplayFailedHtmlPages(all);
+
+            static void DisplayFailedHtmlPages(IEnumerable<XUnitAssemblySummary> summaryList)
+            {
+                foreach (var summary in summaryList.Where(x => x.TestsFailed > 0))
+                {
+                    var htmlFilePath = Path.ChangeExtension(summary.ResultsFilePath, ".html");
+                    var info = new ProcessStartInfo()
+                    {
+                        FileName = htmlFilePath,
+                        UseShellExecute = true,
+                    };
+                    Process.Start(info);
+                }
+            }
         }
 
         private async Task<DisplayInfo> CompleteJobAsync(HelixJob helixJob)

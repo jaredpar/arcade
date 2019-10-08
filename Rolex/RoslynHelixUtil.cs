@@ -59,7 +59,7 @@ namespace Rolex
 
         internal async Task<List<HelixJob>> QueueAllAsync(string roslynRoot, string configuration)
         {
-            var list = new List<HelixJob>();
+            var list = new List<Task<HelixJob>>();
             var unitTestFilePaths = GetUnitTestFilePaths();
             var flatList = new List<string>();
 
@@ -67,8 +67,7 @@ namespace Rolex
             {
                 if (UsePartitions(unitTestFilePath))
                 {
-                    var job = await QueuePartitionedAsync(unitTestFilePath).ConfigureAwait(false);
-                    list.Add(job);
+                    list.Add(QueuePartitionedAsync(unitTestFilePath));
                 }
                 else
                 {
@@ -78,11 +77,11 @@ namespace Rolex
 
             if (flatList.Count > 0)
             {
-                var job = await QueueAsync(flatList.ToArray()).ConfigureAwait(false);
-                list.Add(job);
+                list.Add(QueueAsync(flatList.ToArray()));
             }
 
-            return list;
+            await Task.WhenAll(list).ConfigureAwait(false);
+            return list.Select(x => x.Result).ToList();
 
             List<string> GetUnitTestFilePaths()
             {
@@ -233,7 +232,7 @@ namespace Rolex
 
                 if (usesUnitTestResources)
                 {
-                    batchContent = @$"cp %HELIX_CORRELATION_PAYLOAD%\{TestResourceDllName} ." + Environment.NewLine + batchContent;
+                    batchContent = @$"copy %HELIX_CORRELATION_PAYLOAD%\{TestResourceDllName} ." + Environment.NewLine + batchContent;
                 }
 
                 WriteFileContentIfDifferent(batchFilePath, batchContent);
@@ -356,7 +355,7 @@ cd %HELIX_CORRELATION_PAYLOAD%
                 directory = directory.Substring(0, directory.Length - 1);
             }
 
-            foreach (var filePath in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+            foreach (var filePath in Directory.EnumerateFileSystemEntries(directory, "*", SearchOption.AllDirectories))
             {
                 if (File.Exists(filePath))
                 {
