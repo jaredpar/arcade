@@ -52,7 +52,7 @@ namespace Rolex
 
             if (flatList.Count > 0)
             {
-                list.Add(QueueAsync(flatList.ToArray()));
+                list.Add(QueueStandardAsync(flatList.ToArray()));
             }
 
             await Task.WhenAll(list).ConfigureAwait(false);
@@ -103,7 +103,7 @@ namespace Rolex
         /// different unit test DLL. The job will then use correlation payloads to make the execution 
         /// speedier.
         /// </summary>
-        internal async Task<HelixJob> QueueAsync(params string[] unitTestFilePaths)
+        internal async Task<HelixJob> QueueStandardAsync(params string[] unitTestFilePaths)
         {
             if (unitTestFilePaths.Length == 0)
             {
@@ -280,6 +280,11 @@ cd %HELIX_CORRELATION_PAYLOAD%
                 return batchFileName;
             }
         }
+
+        internal Task<HelixJob> QueueAsync(string unitTestFilePath, bool partition) =>
+            partition
+            ? QueuePartitionedAsync(unitTestFilePath)
+            : QueueStandardAsync(unitTestFilePath);
 
         private async Task<HelixJob> SendAsync(IHelixApi helixApi, IJobDefinition job, string displayName, List<string> workItemNames)
         {

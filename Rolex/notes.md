@@ -7,6 +7,8 @@ the assemblies
 hidden.
 - Need to surface how long each test run takes for the non-partitioned assemblies
 so that I know what I can partition better in the future.
+- Need RolexStorage to hold a container type and not a raw List<HelixJob>. This lets it have a 
+name, abstract away the type of run, etc ...
 
 # Helix API Feedback
 

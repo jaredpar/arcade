@@ -15,12 +15,12 @@ namespace Rolex
     /// </summary>
     internal sealed class RolexStorage
     {
-        private struct StorageHelixJob
+        public struct StorageHelixJob
         {
-            internal string DisplayName { get; set;  }
-            internal string CorrelationId { get; set;  }
-            internal Uri ContainerUri { get; set;  }
-            internal List<string> WorkItemNames { get; set;  }
+            public string DisplayName { get; set;  }
+            public string CorrelationId { get; set;  }
+            public Uri ContainerUri { get; set;  }
+            public List<string> WorkItemNames { get; set;  }
         }
 
         private const string HelixJobFileName = "helixjobs.json";
@@ -34,11 +34,11 @@ namespace Rolex
         }
 
         internal static string GetDefaultRolexDataDirectory() =>
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "rolex");
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "rolex");
 
         internal async Task<string> SaveAsync(IEnumerable<HelixJob> helixJobs)
         {
-            var name = DateTime.UtcNow.ToString("yyyy-MM-dd_HH:mm:ss");
+            var name = DateTime.UtcNow.ToString("yyyy-MM-dd_HH-mm-ss");
             var directory = Path.Combine(RolexDataDirectory, name);
             Directory.CreateDirectory(directory);
 
