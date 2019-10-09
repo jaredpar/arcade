@@ -42,6 +42,9 @@ namespace Rolex
                     case "wait":
                         await RunWait(commandArgs).ConfigureAwait(false);
                         break;
+                    case "analyze":
+                        await RunAnalyze(commandArgs).ConfigureAwait(false);
+                        break;
                     default:
                         ShowHelp();
                         break;
@@ -63,9 +66,9 @@ namespace Rolex
         private async Task RunList(IEnumerable<string> args)
         {
             var all = await RolexStorage.ListRolexRunInfosAsync().ConfigureAwait(false);
-            foreach (var name in all)
+            foreach (var rolexRunInfo in all)
             {
-                Console.WriteLine(name);
+                Console.WriteLine(rolexRunInfo.Id);
             }
 
             Console.WriteLine($"{all.Count} jobs");
@@ -110,7 +113,7 @@ namespace Rolex
             if (wait)
             {
                 var display = new RolexRunDisplay(RolexStorage);
-                await display.Display(rolexRunInfo).ConfigureAwait(false);
+                await display.DisplayAsync(rolexRunInfo).ConfigureAwait(false);
                 Console.WriteLine($"Total time {DateTime.UtcNow - start}");
             }
         }
@@ -125,7 +128,20 @@ namespace Rolex
 
             var rolexRunInfo = await RolexStorage.GetRolexRunInfo(waitArgs[0]).ConfigureAwait(false);
             var display = new RolexRunDisplay(RolexStorage);
-            await display.Display(rolexRunInfo).ConfigureAwait(false);
+            await display.DisplayAsync(rolexRunInfo).ConfigureAwait(false);
+        }
+
+        private async Task RunAnalyze(IEnumerable<string> args)
+        {
+            var analyzeArgs = args.ToList();
+            if (analyzeArgs.Count != 1)
+            {
+                throw new Exception("analyzer must be provided an id to analyze");
+            }
+
+            var rolexRunInfo = await RolexStorage.GetRolexRunInfo(analyzeArgs[0]).ConfigureAwait(false);
+            var display = new RolexRunDisplay(RolexStorage);
+            await display.AnalyzeAsync(rolexRunInfo).ConfigureAwait(false);
         }
 
         private void ParseAll(OptionSet optionSet, IEnumerable<string> args)

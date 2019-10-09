@@ -27,7 +27,7 @@ namespace Rolex
             _logger = logger ?? delegate { };
         }
 
-        internal async Task Display(RolexRunInfo rolexRunInfo)
+        internal async Task DisplayAsync(RolexRunInfo rolexRunInfo)
         {
             var helixRun = await RolexStorage.GetHelixRunAsync(rolexRunInfo).ConfigureAwait(false);
             if (!rolexRunInfo.HasTestResults)
@@ -62,6 +62,42 @@ namespace Rolex
             }
         }
 
+        internal async Task AnalyzeAsync(RolexRunInfo rolexRunInfo)
+        {
+            if (!rolexRunInfo.HasTestResults)
+            {
+                throw new Exception("Cannot analyze unless test results are available");
+            }
+
+            var helixRun = await RolexStorage.GetHelixRunAsync(rolexRunInfo).ConfigureAwait(false);
+            const int width = 8;
+
+            Console.WriteLine($"{"Assembly",-70} {"Partitions",10} {"Max Time",width} {"Min Time",width} {"Total Time",width}");
+            Console.WriteLine(new string('=', 120));
+            foreach (var helixJob in helixRun.HelixJobs)
+            {
+                var testResultDirectory = GetTestResultDirectory(rolexRunInfo, helixJob);
+                if (helixJob.IsPartitioned)
+                {
+                    // TDOO: do this
+                }
+                else
+                {
+                    // TODO: The fact a WorkItem name / test dir name is an assembly name in the non-partitioned case is 
+                    // convention. should consider sub classing or another technique to make this more first class
+                    foreach (var directory in Directory.EnumerateDirectories(testResultDirectory))
+                    {
+                        var name = Path.GetFileName(directory);
+                        var xmlFilePath = Directory.EnumerateFiles(directory, "*.xml").Single();
+                        var xunitResults = (await XUnitUtil.ReadSummariesAsync(xmlFilePath).ConfigureAwait(false)).Single();
+
+                        Console.WriteLine($"{name,-70} {"N/A",width} {"N/A",width} {"N/A",width} {xunitResults.ExecutionTime,width}");
+                    }
+                }
+
+            }
+        }
+
         private async Task CompleteAndDownloadAsync(RolexRunInfo rolexRunInfo)
         {
             if (Directory.Exists(rolexRunInfo.TestResultDirectory))
@@ -77,9 +113,10 @@ namespace Rolex
             await Task.WhenAll(list).ConfigureAwait(false);
 
             await RolexStorage.SaveRolexRunInfoAsync(rolexRunInfo.WithTestResults()).ConfigureAwait(false);
+                Console.WriteLine(new string('=', 120));
 
             static async Task CompleteAndDownloadAsync(RolexRunInfo rolexRunInfo, IHelixApi helixApi, HelixJob helixJob)
-            {
+            { 
                 await helixApi.Job.WaitForJobAsync(helixJob.CorrelationId, pollingIntervalMs: 5000).ConfigureAwait(false);
 
                 var downloadStart = DateTime.UtcNow;
@@ -105,19 +142,18 @@ namespace Rolex
             }
 
             return list;
+        }
 
-
-            static async Task<List<XUnitAssemblySummary>> GetSummariesAsync(string testResultDirectory)
+        private static async Task<List<XUnitAssemblySummary>> GetSummariesAsync(string testResultDirectory)
+        {
+            var list = new List<XUnitAssemblySummary>();
+            foreach (var xmlFilePath in Directory.EnumerateFiles(testResultDirectory, "*.xml", SearchOption.AllDirectories))
             {
-                var list = new List<XUnitAssemblySummary>();
-                foreach (var xmlFilePath in Directory.EnumerateFiles(testResultDirectory, "*.xml", SearchOption.AllDirectories))
-                {
-                    var fileList = await XUnitUtil.ReadSummariesAsync(xmlFilePath).ConfigureAwait(false);
-                    list.AddRange(fileList);
-                }
-
-                return list;
+                var fileList = await XUnitUtil.ReadSummariesAsync(xmlFilePath).ConfigureAwait(false);
+                list.AddRange(fileList);
             }
+
+            return list;
         }
 
         private static string GetTestResultDirectory(RolexRunInfo rolexRunInfo, HelixJob helixJob) =>
@@ -174,26 +210,6 @@ namespace Rolex
                     Console.WriteLine($"{helixJob.DisplayName,-70} {wi.Unscheduled,width} {wi.Waiting,width} {wi.Running,width} {wi.Finished,width}");
                 }
             }
-        }
-
-        private void PrintSummaries(DisplayInfo info)
-        {
-            var job = info.HelixJob;
-            var list = info.SummaryList;
-            Console.WriteLine(job.CorrelationId);
-            Console.WriteLine(job.ContainerUri);
-            if (list.Count == 0)
-            {
-                Console.WriteLine("Empty test run");
-                return;
-            }
-
-            Console.WriteLine($"Tests run: {list.Sum(x => x.TestsTotal)}");
-            Console.WriteLine($"Tests passed: {list.Sum(x => x.TestsPassed)}");
-            Console.WriteLine($"Tests skipped: {list.Sum(x => x.TestsSkipped)}");
-            Console.WriteLine($"Tests failed: {list.Sum(x => x.TestsFailed)}");
-            Console.WriteLine($"Max test run time: {list.Max(x => x.ExecutionTime)}");
-            Console.WriteLine($"Min test run time: {list.Min(x => x.ExecutionTime)}");
         }
     }
 }

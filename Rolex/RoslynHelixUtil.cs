@@ -177,7 +177,7 @@ namespace Rolex
                     }
                 }
 
-                return await SendAsync(HelixApi, job, "Multiple", workItemNames).ConfigureAwait(false);
+                return await SendAsync(HelixApi, job, "Multiple", isPartitioned: false, workItemNames).ConfigureAwait(false);
             }
             finally
             {
@@ -269,7 +269,7 @@ namespace Rolex
                 workItemNames.Add(displayName);
             }
 
-            return await SendAsync(HelixApi, job, unitTestFileName, workItemNames).ConfigureAwait(false);
+            return await SendAsync(HelixApi, job, unitTestFileName, isPartitioned: true, workItemNames).ConfigureAwait(false);
 
             static string GetPartitionId(int id) => id.ToString("D3");
 
@@ -291,13 +291,14 @@ cd %HELIX_CORRELATION_PAYLOAD%
             }
         }
 
-        private async Task<HelixJob> SendAsync(IHelixApi helixApi, IJobDefinition job, string displayName, List<string> workItemNames)
+        private async Task<HelixJob> SendAsync(IHelixApi helixApi, IJobDefinition job, string displayName, bool isPartitioned, List<string> workItemNames)
         {
             var sentJob = await job.SendAsync(_logger).ConfigureAwait(false);
             return new HelixJob(
                 displayName,
                 sentJob.CorrelationId,
                 new Uri(sentJob.ResultsContainerUri + sentJob.ResultsContainerReadSAS),
+                isPartitioned,
                 workItemNames);
         }
 

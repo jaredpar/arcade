@@ -46,9 +46,10 @@ namespace Rolex
 
         public struct StorageHelixJob
         {
-            public string DisplayName { get; set;  }
-            public string CorrelationId { get; set;  }
-            public Uri ContainerUri { get; set;  }
+            public string DisplayName { get; set; }
+            public string CorrelationId { get; set; }
+            public Uri ContainerUri { get; set; }
+            public bool IsPartitioned { get; set; }
             public List<string> WorkItemNames { get; set;  }
 
             public static StorageHelixJob Create(HelixJob job) =>
@@ -57,11 +58,12 @@ namespace Rolex
                     DisplayName = job.DisplayName,
                     CorrelationId = job.CorrelationId,
                     ContainerUri = job.ContainerUri,
+                    IsPartitioned = job.IsPartitioned,
                     WorkItemNames = job.WorkItemNames.ToList()
                 };
 
             public HelixJob Convert() =>
-                new HelixJob(DisplayName, CorrelationId, ContainerUri, WorkItemNames.ToList());
+                new HelixJob(DisplayName, CorrelationId, ContainerUri, IsPartitioned, WorkItemNames.ToList());
         }
     }
 }

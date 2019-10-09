@@ -16,17 +16,20 @@ namespace Rolex
         internal string DisplayName { get; }
         internal string CorrelationId { get; }
         internal Uri ContainerUri { get; }
+        internal bool IsPartitioned { get; }
         internal List<string> WorkItemNames { get; }
 
         internal HelixJob(
             string displayName,
             string correlationId,
             Uri containerUri,
+            bool isPartitioned,
             List<string> workItemNames)
         {
             DisplayName = displayName;
             CorrelationId = correlationId;
             ContainerUri = containerUri;
+            IsPartitioned = isPartitioned;
             WorkItemNames = workItemNames;
         }
 
