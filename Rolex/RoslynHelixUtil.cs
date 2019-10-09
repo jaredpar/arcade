@@ -32,7 +32,7 @@ namespace Rolex
             _logger = logger;
         }
 
-        internal async Task<List<HelixJob>> QueueAllAsync(string roslynRoot, string configuration)
+        internal async Task<HelixRun> QueueAllRunAsync(string roslynRoot, string configuration)
         {
             var list = new List<Task<HelixJob>>();
             var unitTestFilePaths = GetUnitTestFilePaths();
@@ -56,7 +56,8 @@ namespace Rolex
             }
 
             await Task.WhenAll(list).ConfigureAwait(false);
-            return list.Select(x => x.Result).ToList();
+            var helixJobs = list.Select(x => x.Result).ToList();
+            return new HelixRun(HelixApi, _queueId, helixJobs);
 
             List<string> GetUnitTestFilePaths()
             {
@@ -96,6 +97,16 @@ namespace Rolex
 
                 return false;
             }
+        }
+
+        internal async Task<HelixRun> QueueAssemblyRunAsync(string unitTestFilePath, bool partition)
+        {
+            var task = partition
+                ? QueuePartitionedAsync(unitTestFilePath)
+                : QueueStandardAsync(unitTestFilePath);
+            var helixJob = await task.ConfigureAwait(false);
+            return new HelixRun(HelixApi, _queueId, new[] { helixJob });
+
         }
 
         /// <summary>
@@ -281,16 +292,10 @@ cd %HELIX_CORRELATION_PAYLOAD%
             }
         }
 
-        internal Task<HelixJob> QueueAsync(string unitTestFilePath, bool partition) =>
-            partition
-            ? QueuePartitionedAsync(unitTestFilePath)
-            : QueueStandardAsync(unitTestFilePath);
-
         private async Task<HelixJob> SendAsync(IHelixApi helixApi, IJobDefinition job, string displayName, List<string> workItemNames)
         {
             var sentJob = await job.SendAsync(_logger).ConfigureAwait(false);
             return new HelixJob(
-                helixApi,
                 displayName,
                 sentJob.CorrelationId,
                 new Uri(sentJob.ResultsContainerUri + sentJob.ResultsContainerReadSAS),

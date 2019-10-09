@@ -29,7 +29,7 @@ namespace Rolex
             TestResultsDirectory = testResultsDirectory;
         }
 
-        internal async Task Display(IEnumerable<HelixJob> helixJobs)
+        internal async Task Display(HelixRun helixRun)
         {
             if (Directory.Exists(TestResultsDirectory))
             {
@@ -38,22 +38,16 @@ namespace Rolex
             Directory.CreateDirectory(TestResultsDirectory);
 
             var start = DateTime.UtcNow;
-            var list = helixJobs.Select(x => CompleteJobAsync(x)).ToList();
+            var helixJobs = helixRun.HelixJobs;
+            var list = helixJobs.Select(x => CompleteJobAsync(helixRun.HelixApi, x)).ToList();
+            await PrintStatusAsync(helixRun, Task.WhenAll(list));
+
             var displayInfoList = new List<DisplayInfo>();
-            while (list.Count > 0)
+            foreach (var task in list)
             {
-                var (completed, completedTask) = await RolexUtil.WhenAny(list, TimeSpan.FromSeconds(10)).ConfigureAwait(false);
-                if (!completed)
-                {
-                    await PrintStatusAsync(helixJobs).ConfigureAwait(false);
-                }
-                else
-                {
-                    list.Remove(completedTask);
-                    var displayInfo = await completedTask.ConfigureAwait(false);
-                    PrintSummaries(displayInfo);
-                    displayInfoList.Add(displayInfo);
-                }
+                var displayInfo = await task.ConfigureAwait(false);
+                PrintSummaries(displayInfo);
+                displayInfoList.Add(displayInfo);
             }
 
             var total = TimeSpan.FromMilliseconds(displayInfoList.Sum(x => (long)x.DownloadTime.TotalMilliseconds));
@@ -84,9 +78,9 @@ namespace Rolex
             }
         }
 
-        private async Task<DisplayInfo> CompleteJobAsync(HelixJob helixJob)
+        private async Task<DisplayInfo> CompleteJobAsync(IHelixApi helixApi, HelixJob helixJob)
         {
-            await helixJob.HelixApi.Job.WaitForJobAsync(helixJob.CorrelationId, pollingIntervalMs: 5000).ConfigureAwait(false);
+            await helixApi.Job.WaitForJobAsync(helixJob.CorrelationId, pollingIntervalMs: 5000).ConfigureAwait(false);
 
             var downloadStart = DateTime.UtcNow;
             var util = new TestResultUtil(helixJob.ContainerUri);
@@ -115,23 +109,52 @@ namespace Rolex
             }
         }
 
-        internal async Task PrintStatusAsync(IEnumerable<HelixJob> helixJobs)
+        private async Task PrintStatusAsync(HelixRun helixRun, Task untilTask)
         {
             const int width = 8;
-            Console.WriteLine($"{"Job Name",-70} {"Unsched",width} {"Waiting",width} {"Running",width} {"Finished",width}");
-            Console.WriteLine(new string('=', 120));
-            foreach (var helixJob in helixJobs)
+            var consoleLeft = Console.CursorLeft;
+            var consoleTop = Console.CursorTop;
+            Console.CursorVisible = false;
+            do
             {
                 try
                 {
-                    var details = await helixJob.HelixApi.Job.DetailsAsync(helixJob.CorrelationId).ConfigureAwait(false);
-                    var wi = details.WorkItems;
-                    Console.WriteLine($"{helixJob.DisplayName,-70} {wi.Unscheduled,width} {wi.Waiting,width} {wi.Running,width} {wi.Finished,width}");
+                    await PrintCore().ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine("Error printing job status");
+                    Console.WriteLine("Error printing status");
                     Console.WriteLine(ex.Message);
+                }
+
+                var delayTask = Task.Delay(TimeSpan.FromSeconds(1));
+                var completedTask = await Task.WhenAny(untilTask, delayTask).ConfigureAwait(false);
+                if (completedTask == untilTask)
+                {
+                    break;
+                }
+
+            } while (true);
+            Console.CursorVisible = true;
+
+            async Task PrintCore()
+            {
+                Console.CursorLeft = consoleLeft;
+                Console.CursorTop = consoleTop;
+                Console.WriteLine($"{DateTime.UtcNow}");
+
+                var helixApi = helixRun.HelixApi;
+                var queueInfo = await helixApi.Information.QueueInfoAsync(helixRun.QueueId).ConfigureAwait(false);
+                Console.WriteLine($"Queue {helixRun.QueueId} current depth {queueInfo.QueueDepth}");
+                Console.WriteLine("");
+                Console.WriteLine($"{"Job Name",-70} {"Unsched",width} {"Waiting",width} {"Running",width} {"Finished",width}");
+                Console.WriteLine(new string('=', 120));
+                var helixJobs = helixRun.HelixJobs;
+                foreach (var helixJob in helixJobs)
+                {
+                        var details = await helixApi.Job.DetailsAsync(helixJob.CorrelationId).ConfigureAwait(false);
+                        var wi = details.WorkItems;
+                        Console.WriteLine($"{helixJob.DisplayName,-70} {wi.Unscheduled,width} {wi.Waiting,width} {wi.Running,width} {wi.Finished,width}");
                 }
             }
         }

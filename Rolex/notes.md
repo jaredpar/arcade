@@ -9,6 +9,8 @@ hidden.
 so that I know what I can partition better in the future.
 - Need RolexStorage to hold a container type and not a raw List<HelixJob>. This lets it have a 
 name, abstract away the type of run, etc ...
+- Move all the non-user feedback to a logger and a log file that gets dumped to
+the application storage directory.
 
 # Helix API Feedback
 

@@ -22,7 +22,7 @@ namespace Rolex
         {
             // args = new[] { "queue", "-a", @"P:\roslyn\artifacts\bin\Microsoft.CodeAnalysis.CSharp.Syntax.UnitTests\Debug\net472\Microsoft.CodeAnalysis.CSharp.Syntax.UnitTests.dll" };
             // args = new[] { "list" };
-            args = new[] { "wait", "2019-10-09_17-11-24" };
+            args = new[] { "wait", "2019-10-09_17-42-29" };
             // TODO: this is a hack to let me experiment quickly
             await Scratch().ConfigureAwait(false);
             var rolex = new Rolex();

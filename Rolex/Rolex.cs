@@ -92,26 +92,26 @@ namespace Rolex
             var start = DateTime.UtcNow;
             var util = new RoslynHelixUtil(helixApi, queueInfo.QueueId, Console.WriteLine);
             var uploadStart = DateTime.UtcNow;
-            List<HelixJob> list;
+            HelixRun helixRun;
             if (assemblyFilePath is object)
             {
-                var helixJob = await util.QueueAsync(assemblyFilePath, partition).ConfigureAwait(false);
-                list = new List<HelixJob>(new[] { helixJob });
+                helixRun = await util.QueueAssemblyRunAsync(assemblyFilePath, partition).ConfigureAwait(false);
             }
             else
             {
-                list = await util.QueueAllAsync(@"p:\roslyn", "Debug").ConfigureAwait(false);
+                // TODO: don't hard code this vaule
+                helixRun = await util.QueueAllRunAsync(@"p:\roslyn", "Debug").ConfigureAwait(false);
             }
 
             Console.WriteLine($"Upload took {DateTime.UtcNow - uploadStart}");
 
-            var id = await RolexStorage.SaveAsync(list).ConfigureAwait(false);
+            var id = await RolexStorage.SaveAsync(helixRun).ConfigureAwait(false);
             Console.WriteLine($"Saved as {id}");
             if (wait)
             {
                 // TODO this is a hack, pick a real directory
                 var display = new HelixJobDisplay(@"p:\temp\helix");
-                await display.Display(list).ConfigureAwait(false);
+                await display.Display(helixRun).ConfigureAwait(false);
                 Console.WriteLine($"Total time {DateTime.UtcNow - start}");
             }
         }
