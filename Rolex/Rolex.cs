@@ -34,7 +34,7 @@ namespace Rolex
                 switch (command)
                 {
                     case "list":
-                        RunList(commandArgs);
+                        await RunList(commandArgs).ConfigureAwait(false);
                         break;
                     case "queue":
                         await RunQueue(commandArgs).ConfigureAwait(false);
@@ -60,9 +60,9 @@ namespace Rolex
             // TODO: implement
         }
 
-        private void RunList(IEnumerable<string> args)
+        private async Task RunList(IEnumerable<string> args)
         {
-            var all = RolexStorage.ListNames();
+            var all = await RolexStorage.ListRolexRunInfosAsync().ConfigureAwait(false);
             foreach (var name in all)
             {
                 Console.WriteLine(name);
@@ -105,13 +105,12 @@ namespace Rolex
 
             Console.WriteLine($"Upload took {DateTime.UtcNow - uploadStart}");
 
-            var id = await RolexStorage.SaveAsync(helixRun).ConfigureAwait(false);
-            Console.WriteLine($"Saved as {id}");
+            var rolexRunInfo = await RolexStorage.SaveAsync(helixRun).ConfigureAwait(false);
+            Console.WriteLine($"Saved as {rolexRunInfo.Id}");
             if (wait)
             {
-                // TODO this is a hack, pick a real directory
-                var display = new HelixJobDisplay(@"p:\temp\helix");
-                await display.Display(helixRun).ConfigureAwait(false);
+                var display = new RolexRunDisplay(RolexStorage);
+                await display.Display(rolexRunInfo).ConfigureAwait(false);
                 Console.WriteLine($"Total time {DateTime.UtcNow - start}");
             }
         }
@@ -124,10 +123,9 @@ namespace Rolex
                 throw new Exception("wait must be provided an id / name to wait on");
             }
 
-            var helixJobs = await RolexStorage.LoadAsync(waitArgs[0]).ConfigureAwait(false);
-            // TODO this is a hack, pick a real directory
-            var display = new HelixJobDisplay(@"p:\temp\helix");
-            await display.Display(helixJobs).ConfigureAwait(false);
+            var rolexRunInfo = await RolexStorage.GetRolexRunInfo(waitArgs[0]).ConfigureAwait(false);
+            var display = new RolexRunDisplay(RolexStorage);
+            await display.Display(rolexRunInfo).ConfigureAwait(false);
         }
 
         private void ParseAll(OptionSet optionSet, IEnumerable<string> args)

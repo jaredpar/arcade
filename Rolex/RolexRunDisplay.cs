@@ -9,57 +9,41 @@ using System.Diagnostics;
 
 namespace Rolex
 {
-    internal sealed class HelixJobDisplay
+    internal sealed class RolexRunDisplay
     {
-        internal struct DisplayInfo
+        private struct DisplayInfo
         {
             internal HelixJob HelixJob;
             internal string TestResultDirectory;
-            internal TimeSpan DownloadTime;
             internal List<XUnitAssemblySummary> SummaryList;
         }
 
-        /// <summary>
-        /// The directory where all the test result information will be downloaded to.
-        /// </summary>
-        internal string TestResultsDirectory { get; }
+        private readonly Action<string> _logger;
+        internal RolexStorage RolexStorage { get; }
 
-        internal HelixJobDisplay(string testResultsDirectory)
+        internal RolexRunDisplay(RolexStorage rolexStorage, Action<string> logger = null)
         {
-            TestResultsDirectory = testResultsDirectory;
+            RolexStorage = rolexStorage;
+            _logger = logger ?? delegate { };
         }
 
-        internal async Task Display(HelixRun helixRun)
+        internal async Task Display(RolexRunInfo rolexRunInfo)
         {
-            if (Directory.Exists(TestResultsDirectory))
+            var helixRun = await RolexStorage.GetHelixRunAsync(rolexRunInfo).ConfigureAwait(false);
+            if (!rolexRunInfo.HasTestResults)
             {
-                Directory.Delete(TestResultsDirectory, recursive: true);
-            }
-            Directory.CreateDirectory(TestResultsDirectory);
-
-            var start = DateTime.UtcNow;
-            var helixJobs = helixRun.HelixJobs;
-            var list = helixJobs.Select(x => CompleteJobAsync(helixRun.HelixApi, x)).ToList();
-            await PrintStatusAsync(helixRun, Task.WhenAll(list));
-
-            var displayInfoList = new List<DisplayInfo>();
-            foreach (var task in list)
-            {
-                var displayInfo = await task.ConfigureAwait(false);
-                PrintSummaries(displayInfo);
-                displayInfoList.Add(displayInfo);
+                var completedTask = CompleteAndDownloadAsync(rolexRunInfo);
+                await PrintStatusAsync(helixRun, completedTask).ConfigureAwait(false);
             }
 
-            var total = TimeSpan.FromMilliseconds(displayInfoList.Sum(x => (long)x.DownloadTime.TotalMilliseconds));
+            var displayInfoList = await LoadDisplayInfoAsync(rolexRunInfo, helixRun);
             var all = displayInfoList.SelectMany(x => x.SummaryList);
             Console.WriteLine(new string('=', 80));
-            Console.WriteLine($"Tests passed: {all.Sum(x => x.TestsPassed)}");
-            Console.WriteLine($"Tests skipped: {all.Sum(x => x.TestsSkipped)}");
-            Console.WriteLine($"Tests failed: {all.Sum(x => x.TestsFailed)}");
-            Console.WriteLine($"Total tests: {all.Sum(x => x.TestsTotal)}");
+            Console.WriteLine($"Tests passed: {all.Sum(x => x.TestsPassed):n0}");
+            Console.WriteLine($"Tests skipped: {all.Sum(x => x.TestsSkipped):n0}");
+            Console.WriteLine($"Tests failed: {all.Sum(x => x.TestsFailed):n0}");
+            Console.WriteLine($"Total tests: {all.Sum(x => x.TestsTotal):n0}");
             Console.WriteLine($"Total test execution time: {all.Sum(x => x.ExecutionTime)}");
-            Console.WriteLine($"Local execution time: {DateTime.UtcNow - start}");
-            Console.WriteLine($"Total download time: {total}");
 
             DisplayFailedHtmlPages(all);
 
@@ -78,25 +62,52 @@ namespace Rolex
             }
         }
 
-        private async Task<DisplayInfo> CompleteJobAsync(IHelixApi helixApi, HelixJob helixJob)
+        private async Task CompleteAndDownloadAsync(RolexRunInfo rolexRunInfo)
         {
-            await helixApi.Job.WaitForJobAsync(helixJob.CorrelationId, pollingIntervalMs: 5000).ConfigureAwait(false);
-
-            var downloadStart = DateTime.UtcNow;
-            var util = new TestResultUtil(helixJob.ContainerUri);
-            var helixJobDirectory = Path.Combine(TestResultsDirectory, helixJob.DisplayName);
-            await util.DownloadAsync(helixJobDirectory).ConfigureAwait(false);
-            var summaryList = await GetSummaries(helixJobDirectory).ConfigureAwait(false);
-
-            return new DisplayInfo()
+            if (Directory.Exists(rolexRunInfo.TestResultDirectory))
             {
-                HelixJob = helixJob,
-                TestResultDirectory = helixJobDirectory,
-                DownloadTime = DateTime.UtcNow - downloadStart,
-                SummaryList = summaryList
-            };
+                Directory.Delete(rolexRunInfo.TestResultDirectory, recursive: true);
+            }
+            Directory.CreateDirectory(rolexRunInfo.TestResultDirectory);
 
-            static async Task<List<XUnitAssemblySummary>> GetSummaries(string testResultDirectory)
+            var helixRun = await RolexStorage.GetHelixRunAsync(rolexRunInfo).ConfigureAwait(false);
+            var helixJobs = helixRun.HelixJobs;
+
+            var list = helixJobs.Select(x => CompleteAndDownloadAsync(rolexRunInfo, helixRun.HelixApi, x)).ToList();
+            await Task.WhenAll(list).ConfigureAwait(false);
+
+            await RolexStorage.SaveRolexRunInfoAsync(rolexRunInfo.WithTestResults()).ConfigureAwait(false);
+
+            static async Task CompleteAndDownloadAsync(RolexRunInfo rolexRunInfo, IHelixApi helixApi, HelixJob helixJob)
+            {
+                await helixApi.Job.WaitForJobAsync(helixJob.CorrelationId, pollingIntervalMs: 5000).ConfigureAwait(false);
+
+                var downloadStart = DateTime.UtcNow;
+                var util = new TestResultUtil(helixJob.ContainerUri);
+                var testResultDirectory = GetTestResultDirectory(rolexRunInfo, helixJob);
+                await util.DownloadAsync(testResultDirectory).ConfigureAwait(false);
+            }
+        }
+
+        private async Task<List<DisplayInfo>> LoadDisplayInfoAsync(RolexRunInfo rolexRunInfo, HelixRun helixRun)
+        {
+            var list = new List<DisplayInfo>();
+            foreach (var helixJob in helixRun.HelixJobs)
+            {
+                var testResultDirectory = GetTestResultDirectory(rolexRunInfo, helixJob);
+                var summaries = await GetSummariesAsync(testResultDirectory).ConfigureAwait(false);
+                list.Add(new DisplayInfo()
+                {
+                    HelixJob = helixJob,
+                    TestResultDirectory = testResultDirectory,
+                    SummaryList = summaries
+                });
+            }
+
+            return list;
+
+
+            static async Task<List<XUnitAssemblySummary>> GetSummariesAsync(string testResultDirectory)
             {
                 var list = new List<XUnitAssemblySummary>();
                 foreach (var xmlFilePath in Directory.EnumerateFiles(testResultDirectory, "*.xml", SearchOption.AllDirectories))
@@ -109,6 +120,12 @@ namespace Rolex
             }
         }
 
+        private static string GetTestResultDirectory(RolexRunInfo rolexRunInfo, HelixJob helixJob) =>
+            Path.Combine(rolexRunInfo.TestResultDirectory, helixJob.DisplayName);
+
+        /// <summary>
+        /// Print the status of the actively executing HelixRun until the given task completes
+        /// </summary>
         private async Task PrintStatusAsync(HelixRun helixRun, Task untilTask)
         {
             const int width = 8;
@@ -117,6 +134,7 @@ namespace Rolex
             Console.CursorVisible = false;
             do
             {
+                var delayTask = Task.Delay(TimeSpan.FromSeconds(1));
                 try
                 {
                     await PrintCore().ConfigureAwait(false);
@@ -127,7 +145,6 @@ namespace Rolex
                     Console.WriteLine(ex.Message);
                 }
 
-                var delayTask = Task.Delay(TimeSpan.FromSeconds(1));
                 var completedTask = await Task.WhenAny(untilTask, delayTask).ConfigureAwait(false);
                 if (completedTask == untilTask)
                 {
@@ -152,9 +169,9 @@ namespace Rolex
                 var helixJobs = helixRun.HelixJobs;
                 foreach (var helixJob in helixJobs)
                 {
-                        var details = await helixApi.Job.DetailsAsync(helixJob.CorrelationId).ConfigureAwait(false);
-                        var wi = details.WorkItems;
-                        Console.WriteLine($"{helixJob.DisplayName,-70} {wi.Unscheduled,width} {wi.Waiting,width} {wi.Running,width} {wi.Finished,width}");
+                    var details = await helixApi.Job.DetailsAsync(helixJob.CorrelationId).ConfigureAwait(false);
+                    var wi = details.WorkItems;
+                    Console.WriteLine($"{helixJob.DisplayName,-70} {wi.Unscheduled,width} {wi.Waiting,width} {wi.Running,width} {wi.Finished,width}");
                 }
             }
         }
@@ -177,7 +194,6 @@ namespace Rolex
             Console.WriteLine($"Tests failed: {list.Sum(x => x.TestsFailed)}");
             Console.WriteLine($"Max test run time: {list.Max(x => x.ExecutionTime)}");
             Console.WriteLine($"Min test run time: {list.Min(x => x.ExecutionTime)}");
-            Console.WriteLine($"DownloadTime: {info.DownloadTime}");
         }
     }
 }

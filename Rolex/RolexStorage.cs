@@ -1,3 +1,4 @@
+using Microsoft.Azure.Storage.Shared.Protocol;
 using Microsoft.DotNet.Helix.Client;
 using Newtonsoft.Json;
 using System;
@@ -13,23 +14,10 @@ namespace Rolex
     /// Manages the submitted jobs on a disk storage space. This lets us rehydrate jobs, list,
     /// wait, etc ...
     /// </summary>
-    internal sealed class RolexStorage
+    internal sealed partial class RolexStorage
     {
-        public struct StorageHelixRun
-        {
-            public string QueueId { get; set; }
-            public List<StorageHelixJob> HelixJobs { get; set; }
-        }
-
-        public struct StorageHelixJob
-        {
-            public string DisplayName { get; set;  }
-            public string CorrelationId { get; set;  }
-            public Uri ContainerUri { get; set;  }
-            public List<string> WorkItemNames { get; set;  }
-        }
-
-        private const string HelixJobFileName = "helixjobs.json";
+        private const string HelixRunFileName = "helixrun.json";
+        private const string RolexRunInfoFileName = "rolexruninfo.json";
 
         internal string RolexDataDirectory { get; }
 
@@ -42,64 +30,74 @@ namespace Rolex
         internal static string GetDefaultRolexDataDirectory() =>
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "rolex");
 
-        internal async Task<string> SaveAsync(HelixRun helixRun)
+        internal async Task<RolexRunInfo> SaveAsync(HelixRun helixRun)
         {
-            var name = DateTime.UtcNow.ToString("yyyy-MM-dd_HH-mm-ss");
+            var dateTime = DateTime.UtcNow;
+            var name = dateTime.ToString("yyyy-MM-dd_HH-mm-ss");
+            var id = dateTime.ToString("yyyy-MM-dd HH:mm:ss");
+
             var directory = Path.Combine(RolexDataDirectory, name);
             Directory.CreateDirectory(directory);
 
-            var helixJobFilePath = Path.Combine(directory, HelixJobFileName);
-            var storageHelixRun = Convert(helixRun);
-            var contents = JsonConvert.SerializeObject(storageHelixRun);
-            using var fileStream = new FileStream(helixJobFilePath, FileMode.Create, FileAccess.ReadWrite);
-            using var streamWriter = new StreamWriter(fileStream);
-            await streamWriter.WriteAsync(contents).ConfigureAwait(false);
-            return name;
+            var runInfo = new RolexRunInfo(id, directory, hasTestResults: false);
+            await SaveAsJsonAsync(Path.Combine(directory, HelixRunFileName), StorageHelixRun.Create(helixRun)).ConfigureAwait(false);
+            await SaveRolexRunInfoAsync(runInfo).ConfigureAwait(false);
 
-            StorageHelixRun Convert(HelixRun helixRun)
-            {
-                var storageHelixRun = new StorageHelixRun()
-                {
-                    QueueId = helixRun.QueueId,
-                    HelixJobs = helixRun.HelixJobs.Select(ConvertOne).ToList()
-                };
-
-                return storageHelixRun;
-
-                StorageHelixJob ConvertOne(HelixJob helixJob) => new StorageHelixJob()
-                {
-                    DisplayName = helixJob.DisplayName,
-                    CorrelationId = helixJob.CorrelationId,
-                    ContainerUri = helixJob.ContainerUri,
-                    WorkItemNames = helixJob.WorkItemNames.ToList(),
-                };
-            }
+            return runInfo;
         }
 
-        internal List<string> ListNames() => Directory
-            .EnumerateDirectories(RolexDataDirectory)
-            .Select(Path.GetFileName)
-            .OrderBy(x => x)
-            .ToList();
-
-        internal async Task<HelixRun> LoadAsync(string name)
+        internal async Task<RolexRunInfo> GetRolexRunInfo(string runId)
         {
-            var directory = Path.Combine(RolexDataDirectory, name);
-            var helixJobFilePath = Path.Combine(directory, HelixJobFileName);
-            var contents = await File.ReadAllTextAsync(helixJobFilePath).ConfigureAwait(false);
-            var storageHelixRun = JsonConvert.DeserializeObject<StorageHelixRun>(contents);
+            var list = await ListRolexRunInfosAsync().ConfigureAwait(false);
+            var runInfo = list.FirstOrDefault(x => x.Id == runId);
+            if (runInfo is null)
+            {
+                throw new Exception($"No run with id {runId}");
+            }
 
-            var helixJobs = storageHelixRun.HelixJobs.Select(Convert).ToList();
-            return new HelixRun(
-                ApiFactory.GetAnonymous(),
-                storageHelixRun.QueueId,
-                helixJobs);
+            return runInfo;
+        }
 
-            static HelixJob Convert(StorageHelixJob helixJob) => new HelixJob(
-                helixJob.DisplayName,
-                helixJob.CorrelationId,
-                helixJob.ContainerUri,
-                helixJob.WorkItemNames);
+        internal async Task<List<RolexRunInfo>> ListRolexRunInfosAsync()
+        {
+            var list = new List<RolexRunInfo>();
+            foreach (var directory in Directory.EnumerateDirectories(RolexDataDirectory))
+            {
+                var runInfo = await LoadRolexRunInfoAsync(directory).ConfigureAwait(false);
+                list.Add(runInfo);
+            }
+            return list;
+        }
+
+        internal async Task<HelixRun> GetHelixRunAsync(RolexRunInfo rolexRunInfo)
+        {
+            var filePath = Path.Combine(rolexRunInfo.DataDirectory, HelixRunFileName);
+            var storage = await LoadAsJsonAsync<StorageHelixRun>(filePath).ConfigureAwait(false);
+            return storage.Convert(ApiFactory.GetAnonymous());
+        }
+
+        private static async Task<RolexRunInfo> LoadRolexRunInfoAsync(string dataDirectory)
+        {
+            var filePath = Path.Combine(dataDirectory, RolexRunInfoFileName);
+            var storage = await LoadAsJsonAsync<StorageRolexRunInfo>(filePath);
+            return storage.Convert(dataDirectory);
+        }
+
+        public Task SaveRolexRunInfoAsync(RolexRunInfo runInfo) =>
+            SaveAsJsonAsync(Path.Combine(runInfo.DataDirectory, RolexRunInfoFileName), StorageRolexRunInfo.Create(runInfo));
+
+        private static async Task SaveAsJsonAsync(string filePath, object data)
+        {
+            var contents = JsonConvert.SerializeObject(data);
+            using var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.ReadWrite);
+            using var streamWriter = new StreamWriter(fileStream);
+            await streamWriter.WriteAsync(contents).ConfigureAwait(false);
+        }
+
+        private static async Task<T> LoadAsJsonAsync<T>(string filePath)
+        {
+            var contents = await File.ReadAllTextAsync(filePath).ConfigureAwait(false);
+            return JsonConvert.DeserializeObject<T>(contents);
         }
     }
 }

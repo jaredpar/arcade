@@ -106,7 +106,6 @@ namespace Rolex
                 : QueueStandardAsync(unitTestFilePath);
             var helixJob = await task.ConfigureAwait(false);
             return new HelixRun(HelixApi, _queueId, new[] { helixJob });
-
         }
 
         /// <summary>

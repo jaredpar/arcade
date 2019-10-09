@@ -17,3 +17,8 @@ the application storage directory.
 ## IHelixApi
 - Should be possible to determine if it's anonymous or not.
 - Every parameter named `job` should be called `correlationId` instead
+
+# Quick Runs
+
+
+dotnet run queue -a P:\roslyn\artifacts\bin\Microsoft.CodeAnalysis.CSharp.Syntax.UnitTests\Debug\net472\Microsoft.CodeAnalysis.CSharp.Syntax.UnitTests.dll
