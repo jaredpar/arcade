@@ -15,6 +15,11 @@ the application storage directory.
 outright.
 - The correlation util should be split into a builder (mutable) and a reader (immutable). That will
 let the queue code be changed into a fan out pattern. 
+- The correlation grouping should be split into two zip files:
+    1. DLLs which have a write date within one week. These are likely DLLs which were built by 
+       the developer
+    2. DLLs which have an older write date. These are likely framework / external references and are
+       less likely to change. More chance the correlation payload will stay stable between builds
 
 # Helix API Feedback
 
@@ -22,6 +27,7 @@ let the queue code be changed into a fan out pattern.
 - Should be possible to determine if it's anonymous or not.
 - Every parameter named `job` should be called `correlationId` instead
 - Why doesn't `IPayload.UploadAsync` return a `Task<Uri>`.
+- Need a `WithPayloadStream` as well
 
 # Quick Runs
 

@@ -211,20 +211,56 @@ namespace Rolex
             {
                 Console.CursorLeft = consoleLeft;
                 Console.CursorTop = consoleTop;
-                Console.WriteLine($"{DateTime.UtcNow}");
 
-                var helixApi = helixRun.HelixApi;
-                var queueInfo = await helixApi.Information.QueueInfoAsync(helixRun.QueueId).ConfigureAwait(false);
-                Console.WriteLine($"Queue {helixRun.QueueId} current depth {queueInfo.QueueDepth}");
-                Console.WriteLine("");
-                Console.WriteLine($"{"Job Name",-70} {"Unsched",width} {"Waiting",width} {"Running",width} {"Finished",width}");
-                Console.WriteLine(new string('=', 120));
-                var helixJobs = helixRun.HelixJobs;
-                foreach (var helixJob in helixJobs)
+                var bufferList = new List<string>();
+                await BuildBufferList().ConfigureAwait(false);
+
+                var blankLine = new string(' ', Console.WindowWidth);
+                foreach (var line in bufferList)
                 {
-                    var details = await helixApi.Job.DetailsAsync(helixJob.CorrelationId).ConfigureAwait(false);
-                    var wi = details.WorkItems;
-                    Console.WriteLine($"{helixJob.DisplayName,-70} {wi.Unscheduled,width} {wi.Waiting,width} {wi.Running,width} {wi.Finished,width}");
+                    WriteLine(line);
+                }
+
+                void WriteLine(string message)
+                {
+                    var left = Console.CursorLeft;
+                    var top = Console.CursorTop;
+                    var width = Console.WindowWidth;
+                    Console.WriteLine(new string(' ', width));
+                    Console.CursorLeft = left;
+                    Console.CursorTop = top;
+                    Console.WriteLine(message);
+                }
+
+                async Task BuildBufferList()
+                {
+                    var helixApi = helixRun.HelixApi;
+                    var queueInfo = await helixApi.Information.QueueInfoAsync(helixRun.QueueId).ConfigureAwait(false);
+                    var banner = new string('=', 120);
+
+                    bufferList.Add($"{"Job Name",-70} {"Unsched",width} {"Waiting",width} {"Running",width} {"Finished",width}");
+                    bufferList.Add(banner);
+
+                    int unscheduled = 0;
+                    int waiting = 0;
+                    int running = 0;
+                    int finished = 0;
+                    var helixJobs = helixRun.HelixJobs;
+                    foreach (var helixJob in helixJobs)
+                    {
+                        var details = await helixApi.Job.DetailsAsync(helixJob.CorrelationId).ConfigureAwait(false);
+                        var wi = details.WorkItems;
+                        bufferList.Add($"{helixJob.DisplayName,-70} {wi.Unscheduled,width} {wi.Waiting,width} {wi.Running,width} {wi.Finished,width}");
+                        unscheduled += wi.Unscheduled;
+                        waiting += wi.Waiting;
+                        running += wi.Running;
+                        finished += wi.Finished;
+                    }
+                    bufferList.Add(banner);
+                    bufferList.Add($"{"Total",-70} {unscheduled,width} {waiting,width} {running,width} {finished,width}");
+                    bufferList.Add("");
+                    bufferList.Add($"Queue {helixRun.QueueId} current depth {queueInfo.QueueDepth}");
+                    bufferList.Add($"{DateTime.UtcNow.ToLocalTime()}");
                 }
             }
         }

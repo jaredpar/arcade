@@ -91,7 +91,10 @@ namespace Rolex
                     unitTestFileName == "Microsoft.CodeAnalysis.EditorFeatures2.UnitTests.dll" ||
                     unitTestFileName == "Microsoft.VisualStudio.LanguageServices.UnitTests.dll" ||
                     unitTestFileName == "Microsoft.CodeAnalysis.CSharp.EditorFeatures.UnitTests.dll" ||
-                    unitTestFileName == "Microsoft.CodeAnalysis.VisualBasic.EditorFeatures.UnitTests.dll")
+                    unitTestFileName == "Microsoft.CodeAnalysis.VisualBasic.EditorFeatures.UnitTests.dll" ||
+                    unitTestFileName == "Microsoft.CodeAnalysis.CSharp.Symbol.UnitTests.dll" ||
+                    unitTestFileName == "Microsoft.CodeAnalysis.VisualBasic.Emit.UnitTests.dll" ||
+                    unitTestFileName == "Microsoft.CodeAnalysis.VisualBasic.Semantic.UnitTests.dll")
                 {
                     return true;
                 }
