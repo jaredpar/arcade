@@ -6,11 +6,17 @@ using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
 using System.ComponentModel.DataAnnotations;
+using System.IO;
+using System.Reflection.PortableExecutable;
+using System.Reflection.Metadata;
 
 namespace Rolex
 {
     internal static class RolexUtil
     {
+        internal static readonly StringComparer FileSystemComparer = StringComparer.OrdinalIgnoreCase;
+        internal static readonly StringComparison FileSystemComparison = StringComparison.OrdinalIgnoreCase;
+
         internal static async Task<QueueInfo> FindQueueInfoAsync(IHelixApi helixApi, string defaultQueueId = "Windows.10.Amd64.Open")
         {
             var queueInfoList = await helixApi.Information.QueueInfoListAsync().ConfigureAwait(false);
@@ -51,6 +57,23 @@ namespace Rolex
             else
             {
                 return (true, (Task<T>)task);
+            }
+        }
+
+        internal static Guid? ReadMvid(string filePath)
+        {
+            try
+            {
+                using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
+                var reader = new PEReader(stream);
+                var metadataReader = reader.GetMetadataReader();
+                var mvidHandle = metadataReader.GetModuleDefinition().Mvid;
+                var mvid = metadataReader.GetGuid(mvidHandle);
+                return mvid;
+            }
+            catch
+            {
+                return null;
             }
         }
     }

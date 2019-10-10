@@ -11,12 +11,17 @@ so that I know what I can partition better in the future.
 name, abstract away the type of run, etc ...
 - Move all the non-user feedback to a logger and a log file that gets dumped to
 the application storage directory.
+- Need to produce an error when a work item goes through three attempts and just fails
+outright.
+- The correlation util should be split into a builder (mutable) and a reader (immutable). That will
+let the queue code be changed into a fan out pattern. 
 
 # Helix API Feedback
 
 ## IHelixApi
 - Should be possible to determine if it's anonymous or not.
 - Every parameter named `job` should be called `correlationId` instead
+- Why doesn't `IPayload.UploadAsync` return a `Task<Uri>`.
 
 # Quick Runs
 

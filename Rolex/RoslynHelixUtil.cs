@@ -1,6 +1,7 @@
 using Microsoft.DotNet.Helix.Client;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -127,84 +128,37 @@ namespace Rolex
                 .WithTargetQueue(_queueId)
                 .WithSource(SourceName)
                 .WithCreator(CreatorName);
-            var hasAdddeCorrelation = false;
 
-            // TODO: use the correlation payload resource DLL
-            var workItemNames = new List<string>();
+            // TODO: the correlation directory is hackily created in the same folder to ensure hard linking
+            // will work. May be a bad idea.
+            var correlationDirectory = Path.Combine(
+                Path.GetDirectoryName(unitTestFilePaths.First()),
+                Path.GetRandomFileName());
             var zipDirectory = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
             Directory.CreateDirectory(zipDirectory);
+            var workItemNames = new List<string>();
             try
             {
+                var correlationUtil = new CorrelationUtil();
+                correlationUtil.ProcessAll(unitTestFilePaths.Select(Path.GetDirectoryName).ToArray());
+                correlationUtil.CreateCorrelationPayload(correlationDirectory);
+
+                job = job.WithCorrelationPayloadDirectory(correlationDirectory);
+
                 foreach (var unitTestFilePath in unitTestFilePaths)
                 {
-                    var unitTestDirectory = Path.GetDirectoryName(unitTestFilePath);
-                    PrepXunit(unitTestDirectory);
-                    var displayName = Path.GetFileNameWithoutExtension(Path.GetFileName(unitTestFilePath));
-                    var usesTestResources = UsesTestResources(unitTestDirectory);
-                    var batchFileName = EnsureBatchFile(unitTestFilePath, usesTestResources);
-                    workItemNames.Add(displayName);
-
-                    if (usesTestResources)
-                    {
-                        // TODO: https://github.com/dotnet/arcade/issues/4045
-                        // Until that is fixed I need to zip the files locally so that they unzip properly when 
-                        // run on the target machine.
-                        /*
-                        var comparer = StringComparer.OrdinalIgnoreCase;
-                        var filePaths = Directory
-                            .GetFiles(unitTestDirectory, "*", SearchOption.AllDirectories)
-                            .Where(x => !comparer.Equals(TestResourceDllName, Path.GetFileName(x)))
-                            .ToArray();
-                            */
-                        var unitTestFileName = Path.GetFileName(unitTestFilePath);
-                        var zipFilePath = Path.Combine(zipDirectory, Path.ChangeExtension(unitTestFileName, ".zip"));
-                        ZipDirectory(zipFilePath, unitTestDirectory, TestResourceDllName);
-                        job = job
-                            .DefineWorkItem(displayName)
-                            .WithCommand(@$"cmd /c {batchFileName}")
-                            .WithArchivePayload(zipFilePath)
-                            .WithTimeout(TimeSpan.FromMinutes(15))
-                            .AttachToJob();
-                    }
-                    else
-                    {
-                        job = job
-                            .DefineWorkItem(displayName)
-                            .WithCommand(@$"cmd /c {batchFileName}")
-                            .WithDirectoryPayload(unitTestDirectory)
-                            .WithTimeout(TimeSpan.FromMinutes(15))
-                            .AttachToJob();
-                    }
+                    await QueueOneAsync(correlationUtil, unitTestFilePath).ConfigureAwait(false);
                 }
 
                 return await SendAsync(HelixApi, job, "Multiple", isPartitioned: false, workItemNames).ConfigureAwait(false);
             }
             finally
             {
-                // TODO: clean this up when the helix bug is fixed https://github.com/dotnet/arcade/issues/4045
+                Directory.Delete(correlationDirectory, recursive: true);
                 Directory.Delete(zipDirectory, recursive: true);
             }
 
-            bool UsesTestResources(string unitTestDirectory)
-            {
-                var filePath = Directory
-                    .EnumerateFiles(unitTestDirectory, TestResourceDllName, SearchOption.TopDirectoryOnly)
-                    .FirstOrDefault();
-                if (filePath is object)
-                {
-                    if (!hasAdddeCorrelation)
-                    {
-                        job = job.WithCorrelationPayloadFiles(filePath);
-                        hasAdddeCorrelation = true;
-                    }
-
-                    return true;
-                }
-
-                return false;
-            }
-
-            static string EnsureBatchFile(string unitTestFilePath, bool usesUnitTestResources)
+            static string EnsureBatchFile(string unitTestFilePath, string copyCorrelationContent)
             {
                 var unitTestFileName = Path.GetFileName(unitTestFilePath);
                 var uploadEnvironmentName = "%HELIX_WORKITEM_UPLOAD_ROOT%";
@@ -213,15 +167,56 @@ namespace Rolex
 
                 var batchFileName = $"xunit.cmd";
                 var batchFilePath = Path.Combine(Path.GetDirectoryName(unitTestFilePath), batchFileName);
-                var batchContent = @$".\xunit.console.exe {unitTestFileName} -html {htmlFilePath} -xml {xmlFilePath}";
-
-                if (usesUnitTestResources)
-                {
-                    batchContent = @$"copy %HELIX_CORRELATION_PAYLOAD%\{TestResourceDllName} ." + Environment.NewLine + batchContent;
-                }
+                var batchContent = copyCorrelationContent;
+                batchContent += Environment.NewLine;
+                batchContent += @$".\xunit.console.exe {unitTestFileName} -html {htmlFilePath} -xml {xmlFilePath}";
 
                 WriteFileContentIfDifferent(batchFilePath, batchContent);
-                return batchFileName;
+                return batchFilePath;
+            }
+
+            async Task QueueOneAsync(CorrelationUtil correlationUtil, string unitTestFilePath)
+            {
+                var displayName = Path.GetFileNameWithoutExtension(Path.GetFileName(unitTestFilePath));
+                var unitTestDirectory = Path.GetDirectoryName(unitTestFilePath);
+                PrepXunit(unitTestDirectory);
+
+                _logger($"Preparing {displayName}");
+                var filePaths = new List<string>();
+                var copyContent = "";
+                var comparer = RolexUtil.FileSystemComparer;
+                foreach (var filePath in Directory.EnumerateFiles(unitTestDirectory, "*", SearchOption.AllDirectories))
+                {
+                    // Limiting the correlation caching to DLLs in the root folder. Caching ones from sub
+                    // folders is possible but we'd have to add logic to create the containing directories
+                    // when copying them back out again. Not hard just work.
+                    var fileDirectory = Path.GetDirectoryName(filePath);
+                    if (comparer.Equals(fileDirectory, unitTestDirectory) &&
+                        correlationUtil.TryGetCorrelationFileName(filePath, out var correlationFileName))
+                    {
+                        var fileName = Path.GetFileName(filePath);
+                        copyContent += @$"copy %HELIX_CORRELATION_PAYLOAD%\{correlationFileName} {fileName}" + Environment.NewLine;
+                    }
+                    else
+                    {
+                        filePaths.Add(filePath);
+                    }
+                }
+
+                var batchFilePath = EnsureBatchFile(unitTestFilePath, copyContent);
+                filePaths.Add(batchFilePath);
+
+                var zipFilePath = Path.Combine(zipDirectory, $"{Guid.NewGuid()}.zip");
+                await ZipDirectoryFilesAsync(zipFilePath, unitTestDirectory, filePaths).ConfigureAwait(false);
+
+                workItemNames.Add(displayName);
+
+                job = job
+                    .DefineWorkItem(displayName)
+                    .WithCommand(@$"cmd /c {Path.GetFileName(batchFilePath)}")
+                    .WithArchivePayload(zipFilePath)
+                    .WithTimeout(TimeSpan.FromMinutes(15))
+                    .AttachToJob();
             }
         }
 
@@ -330,23 +325,24 @@ cd %HELIX_CORRELATION_PAYLOAD%
             return true;
         }
 
-        internal static void ZipDirectory(string destFilePath, string directory, string excludeFileName)
+        internal static async Task ZipDirectoryFilesAsync(string destFilePath, string directory, IEnumerable<string> filePaths)
         {
-            using var fileStream = new FileStream(destFilePath, FileMode.Create, FileAccess.ReadWrite);
-            using var archive = new ZipArchive(fileStream, ZipArchiveMode.Create);
+            using var destStream = new FileStream(destFilePath, FileMode.Create, FileAccess.ReadWrite);
+            using var archive = new ZipArchive(destStream, ZipArchiveMode.Create);
 
             if (directory.EndsWith(Path.DirectorySeparatorChar))
             {
                 directory = directory.Substring(0, directory.Length - 1);
             }
 
-            foreach (var filePath in Directory.EnumerateFileSystemEntries(directory, "*", SearchOption.AllDirectories))
+            foreach (var filePath in filePaths)
             {
-                if (File.Exists(filePath))
-                {
-                    var entryName = filePath.Substring(directory.Length + 1).Replace('\\', '/');
-                    _ = archive.CreateEntryFromFile(filePath, entryName);
-                }
+                Debug.Assert(filePath.StartsWith(directory, RolexUtil.FileSystemComparison));
+                var entryName = filePath.Substring(directory.Length + 1).Replace('\\', '/');
+
+                using var entryStream = archive.CreateEntry(entryName).Open();
+                using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
+                await fileStream.CopyToAsync(entryStream).ConfigureAwait(false);
             }
         }
 

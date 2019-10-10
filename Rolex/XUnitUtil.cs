@@ -8,7 +8,7 @@ using System.Xml.Linq;
 
 namespace Rolex
 {
-    internal readonly struct XUnitAssemblySummary
+    internal sealed class XUnitAssemblySummary
     {
         internal string ResultsFilePath { get; }
         internal string AssemblyPath { get; }

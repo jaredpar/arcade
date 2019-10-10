@@ -70,16 +70,20 @@ namespace Rolex
             }
 
             var helixRun = await RolexStorage.GetHelixRunAsync(rolexRunInfo).ConfigureAwait(false);
-            const int width = 8;
+            var list = new List<(string Name, int? Partions, TimeSpan? MinTime, TimeSpan? MaxTime, TimeSpan TotalTime)>();
 
-            Console.WriteLine($"{"Assembly",-70} {"Partitions",10} {"Max Time",width} {"Min Time",width} {"Total Time",width}");
-            Console.WriteLine(new string('=', 120));
             foreach (var helixJob in helixRun.HelixJobs)
             {
                 var testResultDirectory = GetTestResultDirectory(rolexRunInfo, helixJob);
                 if (helixJob.IsPartitioned)
                 {
-                    // TDOO: do this
+                    var partitions = helixJob.WorkItemNames.Count;
+                    var summaryList = await GetSummariesAsync(testResultDirectory).ConfigureAwait(false);
+                    var name = helixJob.DisplayName;
+                    var min = summaryList.Min(x => x.ExecutionTime);
+                    var max = summaryList.Max(x => x.ExecutionTime);
+                    var sum = summaryList.Sum(x => x.ExecutionTime);
+                    list.Add((name, partitions, min, max, sum));
                 }
                 else
                 {
@@ -89,13 +93,27 @@ namespace Rolex
                     {
                         var name = Path.GetFileName(directory);
                         var xmlFilePath = Directory.EnumerateFiles(directory, "*.xml").Single();
-                        var xunitResults = (await XUnitUtil.ReadSummariesAsync(xmlFilePath).ConfigureAwait(false)).Single();
-
-                        Console.WriteLine($"{name,-70} {"N/A",width} {"N/A",width} {"N/A",width} {xunitResults.ExecutionTime,width}");
+                        var xunitResults = (await XUnitUtil.ReadSummariesAsync(xmlFilePath).ConfigureAwait(false)).SingleOrDefault();
+                        if (xunitResults is object)
+                        {
+                            list.Add((name, null, null, null, xunitResults.ExecutionTime));
+                        }
                     }
                 }
-
             }
+
+            const int width = 8;
+            Console.WriteLine($"{"Assembly",-70} {"Partitions",10} {"Min Time",width} {"Max Time",width} {"Total Time",width}");
+            Console.WriteLine(new string('=', 120));
+            foreach (var tuple in list)
+            {
+                var max = Format(tuple.MaxTime);
+                var min = Format(tuple.MinTime);
+                var total = Format(tuple.TotalTime);
+                Console.WriteLine($"{tuple.Name,-70} {tuple.Partions,width} {min} {max} {total}");
+            }
+
+            static string Format(TimeSpan? ts) => ts?.ToString(@"h\:mm\:ss") ?? "        ";
         }
 
         private async Task CompleteAndDownloadAsync(RolexRunInfo rolexRunInfo)
@@ -113,7 +131,6 @@ namespace Rolex
             await Task.WhenAll(list).ConfigureAwait(false);
 
             await RolexStorage.SaveRolexRunInfoAsync(rolexRunInfo.WithTestResults()).ConfigureAwait(false);
-                Console.WriteLine(new string('=', 120));
 
             static async Task CompleteAndDownloadAsync(RolexRunInfo rolexRunInfo, IHelixApi helixApi, HelixJob helixJob)
             { 
