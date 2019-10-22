@@ -20,6 +20,8 @@ let the queue code be changed into a fan out pattern.
        the developer
     2. DLLs which have an older write date. These are likely framework / external references and are
        less likely to change. More chance the correlation payload will stay stable between builds
+- Move the Console printing code into a shared file / helper class
+
 
 # Helix API Feedback
 

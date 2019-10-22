@@ -76,5 +76,59 @@ namespace Rolex
                 return null;
             }
         }
+
+        internal static async Task WriteWithSpinner(string message, Task until)
+        {
+            var visible = Console.CursorVisible;
+            var consoleLeft = Console.CursorLeft;
+            var consoleTop = Console.CursorTop;
+            var spinner = 0;
+
+            Console.CursorVisible = false;
+            try
+            {
+                do
+                {
+                    var delay = Task.Delay(TimeSpan.FromSeconds(.5));
+                    var completed = await Task.WhenAny(delay, until).ConfigureAwait(false);
+                    if (completed == until)
+                    {
+                        break;
+                    }
+
+                    Console.CursorLeft = consoleLeft;
+                    Console.CursorTop = consoleTop;
+                    Console.WriteLine($"{message} {GetSpinner()}");
+                    UpdateSpinner();
+
+                } while (true);
+            }
+            finally
+            {
+                Console.CursorVisible = visible;
+            }
+
+            void UpdateSpinner()
+            {
+                spinner++;
+                if (spinner == 8)
+                {
+                    spinner = 0;
+                }
+            }
+
+            char GetSpinner() => spinner switch
+            {
+                0 => '|',
+                1 => '/',
+                2 => '-',
+                3 => '\\',
+                4 => '|',
+                5 => '/',
+                6 => '-',
+                7 => '\\',
+                _ => ' '
+            };
+        }
     }
 }

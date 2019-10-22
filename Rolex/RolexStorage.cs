@@ -28,9 +28,13 @@ namespace Rolex
         }
 
         internal static string GetDefaultRolexDataDirectory() =>
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "rolex");
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "rolex");
 
-        internal async Task<RolexRunInfo> SaveAsync(HelixRun helixRun)
+        /// <summary>
+        /// Create a rolex run storage directory and return the id
+        /// </summary>
+        /// <returns></returns>
+        internal async Task<RolexRunInfo> CreateRolexRunInfo()
         {
             var dateTime = DateTime.UtcNow;
             var name = dateTime.ToString("yyyy-MM-dd_HH-mm-ss");
@@ -38,12 +42,14 @@ namespace Rolex
 
             var directory = Path.Combine(RolexDataDirectory, name);
             Directory.CreateDirectory(directory);
+            var rolexRunInfo = new RolexRunInfo(id, directory, hasTestResults: false);
+            await SaveRolexRunInfoAsync(rolexRunInfo).ConfigureAwait(false);
+            return rolexRunInfo;
+        }
 
-            var runInfo = new RolexRunInfo(id, directory, hasTestResults: false);
-            await SaveAsJsonAsync(Path.Combine(directory, HelixRunFileName), StorageHelixRun.Create(helixRun)).ConfigureAwait(false);
-            await SaveRolexRunInfoAsync(runInfo).ConfigureAwait(false);
-
-            return runInfo;
+        internal async Task SaveAsync(RolexRunInfo rolexRunInfo, HelixRun helixRun)
+        {
+            await SaveAsJsonAsync(Path.Combine(rolexRunInfo.DataDirectory, HelixRunFileName), StorageHelixRun.Create(helixRun)).ConfigureAwait(false);
         }
 
         internal async Task<RolexRunInfo> GetRolexRunInfo(string runId)

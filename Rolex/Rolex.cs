@@ -77,44 +77,48 @@ namespace Rolex
         private async Task RunQueue(IEnumerable<string> args)
         {
             var wait = false;
-            var partition = true;
+            var serial = false;
             string assemblyFilePath = null;
             var optionSet = new OptionSet()
             {
                 { "w|wait", "wait for test run to complete", w => wait = w is object },
-                { "p|partition", "partition the runs", p => partition = p is object },
+                { "s|serial", "serial test runs (no partitioning)", s => serial = s is object },
                 { "a|assembly=", "assembly to run", p => assemblyFilePath = p },
             };
 
             ParseAll(optionSet, args);
 
+            var rolexRunInfo = await RolexStorage.CreateRolexRunInfo().ConfigureAwait(false);
+            using var rolexLogger = new RolexLogger(rolexRunInfo);
             var helixApi = ApiFactory.GetAnonymous();
             var queueInfo = await RolexUtil.FindQueueInfoAsync(helixApi).ConfigureAwait(false);
-            Console.WriteLine($"Using {queueInfo.QueueId}");
+            rolexLogger.LogAndConsole($"Using queue {queueInfo.QueueId}");
 
             var start = DateTime.UtcNow;
-            var util = new RoslynHelixUtil(helixApi, queueInfo.QueueId, Console.WriteLine);
+            var util = new RoslynHelixUtil(helixApi, queueInfo.QueueId, rolexLogger.Log);
             var uploadStart = DateTime.UtcNow;
-            HelixRun helixRun;
+            Task<HelixRun> helixRunTask;
             if (assemblyFilePath is object)
             {
-                helixRun = await util.QueueAssemblyRunAsync(assemblyFilePath, partition).ConfigureAwait(false);
+                helixRunTask = util.QueueAssemblyRunAsync(assemblyFilePath, partition: !serial);
             }
             else
             {
                 // TODO: don't hard code this vaule
-                helixRun = await util.QueueAllRunAsync(@"p:\roslyn", "Debug").ConfigureAwait(false);
+                helixRunTask = util.QueueAllRunAsync(@"p:\roslyn", "Debug");
             }
 
-            Console.WriteLine($"Upload took {DateTime.UtcNow - uploadStart}");
+            await RolexUtil.WriteWithSpinner("Uploading", helixRunTask).ConfigureAwait(false);
+            var helixRun = await helixRunTask.ConfigureAwait(false);
+            rolexLogger.LogAndConsole($"Upload took {DateTime.UtcNow - uploadStart}");
 
-            var rolexRunInfo = await RolexStorage.SaveAsync(helixRun).ConfigureAwait(false);
-            Console.WriteLine($"Saved as {rolexRunInfo.Id}");
+            await RolexStorage.SaveAsync(rolexRunInfo, helixRun).ConfigureAwait(false);
+            rolexLogger.LogAndConsole($"Saved as {rolexRunInfo.Id}");
             if (wait)
             {
                 var display = new RolexRunDisplay(RolexStorage);
                 await display.DisplayAsync(rolexRunInfo).ConfigureAwait(false);
-                Console.WriteLine($"Total time {DateTime.UtcNow - start}");
+                rolexLogger.LogAndConsole($"Total time {DateTime.UtcNow - start}");
             }
         }
 

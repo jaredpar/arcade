@@ -35,6 +35,11 @@ namespace Rolex
 
         internal async Task<HelixRun> QueueAllRunAsync(string roslynRoot, string configuration)
         {
+            // This is done to deliberately give control back to a caller that invokes this synchronously
+            // and wants to do actions like print console status. There are a lot of sync file system calls
+            // below that can take time before we hit the first real break.
+            await Task.Yield();
+
             var list = new List<Task<HelixJob>>();
             var unitTestFilePaths = GetUnitTestFilePaths();
             var flatList = new List<string>();

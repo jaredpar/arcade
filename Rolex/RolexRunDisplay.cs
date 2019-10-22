@@ -18,6 +18,7 @@ namespace Rolex
             internal List<XUnitAssemblySummary> SummaryList;
         }
 
+
         private readonly Action<string> _logger;
         internal RolexStorage RolexStorage { get; }
 
