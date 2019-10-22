@@ -25,7 +25,7 @@ namespace Rolex
             // args = new[] { "queue" };
             // args = new[] { "analyze", "2019-10-09 21:11:51" };
             // args = new[] { "wait", "2019-10-09 23:10:25" };
-            // args = new[] { "wait", "2019-10-22 15:48:13" };
+            args = new[] { "wait", "2019-10-22 15:48:13" };
             // TODO: this is a hack to let me experiment quickly
             await Scratch().ConfigureAwait(false);
             var rolex = new Rolex();

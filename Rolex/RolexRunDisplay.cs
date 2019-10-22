@@ -6,6 +6,7 @@ using System.Text;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Diagnostics;
+using System.ComponentModel;
 
 namespace Rolex
 {
@@ -33,8 +34,9 @@ namespace Rolex
             var helixRun = await RolexStorage.GetHelixRunAsync(rolexRunInfo).ConfigureAwait(false);
             if (!rolexRunInfo.HasTestResults)
             {
-                var completedTask = CompleteAndDownloadAsync(rolexRunInfo);
+                var (completedTask, downloadedTask) = await CompleteAndDownloadAsync(rolexRunInfo).ConfigureAwait(false);
                 await PrintStatusAsync(helixRun, completedTask).ConfigureAwait(false);
+                await RolexUtil.WriteWithSpinner("Downloading results", downloadedTask);
             }
 
             var displayInfoList = await LoadDisplayInfoAsync(rolexRunInfo, helixRun);
@@ -117,7 +119,7 @@ namespace Rolex
             static string Format(TimeSpan? ts) => ts?.ToString(@"h\:mm\:ss") ?? "        ";
         }
 
-        private async Task CompleteAndDownloadAsync(RolexRunInfo rolexRunInfo)
+        private async Task<(Task Completed, Task Downloaded)> CompleteAndDownloadAsync(RolexRunInfo rolexRunInfo)
         {
             if (Directory.Exists(rolexRunInfo.TestResultDirectory))
             {
@@ -127,20 +129,33 @@ namespace Rolex
 
             var helixRun = await RolexStorage.GetHelixRunAsync(rolexRunInfo).ConfigureAwait(false);
             var helixJobs = helixRun.HelixJobs;
+            var helixApi = helixRun.HelixApi;
+            var completedList = new List<Task>();
+            var downloadedList = new List<Task>();
+            foreach (var helixJob in helixJobs)
+            {
+                var completedTask = helixApi.Job.WaitForJobAsync(helixJob.CorrelationId, pollingIntervalMs: 5000);
+                var downloadedTask = DownloadAsync(rolexRunInfo, helixApi, helixJob, completedTask, _logger);
+                completedList.Add(completedTask);
+                downloadedList.Add(downloadedTask);
+            }
 
-            var list = helixJobs.Select(x => CompleteAndDownloadAsync(rolexRunInfo, helixRun.HelixApi, x)).ToList();
-            await Task.WhenAll(list).ConfigureAwait(false);
+            return (Task.WhenAll(completedList), AllDownloadAsync());
 
-            await RolexStorage.SaveRolexRunInfoAsync(rolexRunInfo.WithTestResults()).ConfigureAwait(false);
+            async Task AllDownloadAsync()
+            {
+                await Task.WhenAll(downloadedList).ConfigureAwait(false);
+                await RolexStorage.SaveRolexRunInfoAsync(rolexRunInfo.WithTestResults()).ConfigureAwait(false);
+            }
 
-            static async Task CompleteAndDownloadAsync(RolexRunInfo rolexRunInfo, IHelixApi helixApi, HelixJob helixJob)
-            { 
-                await helixApi.Job.WaitForJobAsync(helixJob.CorrelationId, pollingIntervalMs: 5000).ConfigureAwait(false);
-
+            static async Task DownloadAsync(RolexRunInfo rolexRunInfo, IHelixApi helixApi, HelixJob helixJob, Task completedTask, Action<string> logger)
+            {
+                await completedTask.ConfigureAwait(false);
                 var downloadStart = DateTime.UtcNow;
                 var util = new TestResultUtil(helixJob.ContainerUri);
                 var testResultDirectory = GetTestResultDirectory(rolexRunInfo, helixJob);
                 await util.DownloadAsync(testResultDirectory).ConfigureAwait(false);
+                logger($"Downloaded {helixJob.DisplayName} in {DateTime.UtcNow - downloadStart}");
             }
         }
 
