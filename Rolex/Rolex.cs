@@ -79,11 +79,13 @@ namespace Rolex
             var wait = false;
             var serial = false;
             string assemblyFilePath = null;
+            string queueId = null;
             var optionSet = new OptionSet()
             {
                 { "w|wait", "wait for test run to complete", w => wait = w is object },
                 { "s|serial", "serial test runs (no partitioning)", s => serial = s is object },
                 { "a|assembly=", "assembly to run", p => assemblyFilePath = p },
+                { "q|queueId=", "queue to run on", q => queueId = q },
             };
 
             ParseAll(optionSet, args);
@@ -91,11 +93,16 @@ namespace Rolex
             var rolexRunInfo = await RolexStorage.CreateRolexRunInfo().ConfigureAwait(false);
             using var rolexLogger = new RolexLogger(rolexRunInfo);
             var helixApi = ApiFactory.GetAnonymous();
-            var queueInfo = await RolexUtil.FindQueueInfoAsync(helixApi).ConfigureAwait(false);
-            rolexLogger.LogAndConsole($"Using queue {queueInfo.QueueId}");
+            if (queueId is null)
+            {
+                var queueInfo = await RolexUtil.FindQueueInfoAsync(helixApi).ConfigureAwait(false);
+                queueId = queueInfo.QueueId;
+            }
+
+            rolexLogger.LogAndConsole($"Using queue {queueId}");
 
             var start = DateTime.UtcNow;
-            var util = new RoslynHelixUtil(helixApi, queueInfo.QueueId, rolexLogger.Log);
+            var util = new RoslynHelixUtil(helixApi, queueId, rolexLogger.Log);
             var uploadStart = DateTime.UtcNow;
             Task<HelixRun> helixRunTask;
             if (assemblyFilePath is object)
