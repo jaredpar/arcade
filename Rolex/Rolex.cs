@@ -144,15 +144,26 @@ namespace Rolex
 
         private async Task RunAnalyze(IEnumerable<string> args)
         {
-            var analyzeArgs = args.ToList();
-            if (analyzeArgs.Count != 1)
+            var partitions = false;
+            var verbose = false;
+            var optionSet = new OptionSet()
             {
-                throw new Exception("analyzer must be provided an id to analyze");
-            }
+                { "p|partitions", "analyze partitions", p => partitions = p is object },
+                { "v|verbose", "verbose output", v => verbose = v is object },
+            };
 
-            var rolexRunInfo = await RolexStorage.GetRolexRunInfo(analyzeArgs[0]).ConfigureAwait(false);
-            var display = new RolexRunDisplay(RolexStorage);
-            await display.AnalyzeAsync(rolexRunInfo).ConfigureAwait(false);
+            ParseAll(optionSet, args, out var rolexRunId);
+            var rolexRunInfo = await RolexStorage.GetRolexRunInfo(rolexRunId).ConfigureAwait(false);
+            var analyzer = new RolexAnalyzer(RolexStorage);
+
+            if (partitions)
+            {
+                await analyzer.AnalyzePartitionsAsync(rolexRunInfo, verbose).ConfigureAwait(false);
+            }
+            else
+            {
+                await analyzer.AnalyzeAsync(rolexRunInfo).ConfigureAwait(false);
+            }
         }
 
         private void ParseAll(OptionSet optionSet, IEnumerable<string> args)
@@ -163,6 +174,18 @@ namespace Rolex
                 var text = string.Join(' ', extra);
                 throw new Exception($"Extra arguments: {text}");
             }
+        }
+
+        private void ParseAll(OptionSet optionSet, IEnumerable<string> args, out string remainingArg)
+        {
+            var extra = optionSet.Parse(args);
+            if (extra.Count != 1)
+            {
+                var text = string.Join(' ', extra);
+                throw new Exception($"Extra arguments: {text}");
+            }
+
+            remainingArg = extra[0];
         }
     }
 }

@@ -9,26 +9,18 @@ namespace Rolex
 {
     internal sealed class TestResultUtil
     {
+        internal RolexRunInfo RolexRunInfo { get; }
+        internal HelixJob HelixJob { get; }
         internal CloudBlobContainer Container { get; }
 
-        internal TestResultUtil(ISentJob job)
+        internal TestResultUtil(RolexRunInfo rolexRunInfo, HelixJob helixJob)
         {
-            var uriStr = job.ResultsContainerUri + job.ResultsContainerReadSAS;
-            var uri = new Uri(uriStr);
-            Container = new CloudBlobContainer(uri);
+            RolexRunInfo = rolexRunInfo;
+            HelixJob = helixJob;
+            Container = new CloudBlobContainer(helixJob.ContainerUri);
         }
 
-        internal TestResultUtil(Uri uri)
-        {
-            Container = new CloudBlobContainer(uri);
-        }
-
-        internal TestResultUtil(CloudBlobContainer container)
-        {
-            Container = container;
-        }
-
-        internal async Task DownloadAsync(string directory)
+        internal async Task DownloadAsync()
         {
             bool Predicate(IListBlobItem item) => item switch
             {
@@ -36,9 +28,15 @@ namespace Rolex
                 CloudBlockBlob blob => blob.Name.EndsWith("xml") || blob.Name.EndsWith("html") || blob.Name.EndsWith("log"),
                 _ => false
             };
+
+            var directory = GetTestResultDirectory(RolexRunInfo, HelixJob);
             await Container.DownloadAsync(
                 directory,
                 Predicate).ConfigureAwait(false);
         }
+
+        internal static string GetTestResultDirectory(RolexRunInfo rolexRunInfo, HelixJob helixJob) =>
+            Path.Combine(rolexRunInfo.TestResultDirectory, helixJob.DisplayName);
+
     }
 }
