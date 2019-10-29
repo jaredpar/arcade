@@ -30,7 +30,15 @@ namespace Rolex
 
         internal async Task DownloadAsync(string directory)
         {
-            await Container.DownloadAsync(directory).ConfigureAwait(false);
+            bool Predicate(IListBlobItem item) => item switch
+            {
+                CloudBlobDirectory _ => true,
+                CloudBlockBlob blob => blob.Name.EndsWith("xml") || blob.Name.EndsWith("html") || blob.Name.EndsWith("log"),
+                _ => false
+            };
+            await Container.DownloadAsync(
+                directory,
+                Predicate).ConfigureAwait(false);
         }
     }
 }

@@ -1,4 +1,5 @@
 using Microsoft.Azure.Storage.Blob;
+using Microsoft.WindowsAzure.Storage.Queue.Protocol;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -32,44 +33,57 @@ namespace Rolex
         internal static Task<List<IListBlobItem>> ListBlobsAsync(this CloudBlobDirectory directory, CancellationToken cancellationToken = default) =>
             ListBlobResultCoreAsync(token => directory.ListBlobsSegmentedAsync(token, cancellationToken));
 
-        internal static async Task DownloadAsync(this CloudBlobContainer container, string destinationDirectory, CancellationToken cancellationToken = default)
+        public static async Task DownloadAsync(
+            this CloudBlobContainer container,
+            string destinationDirectory,
+            Func<IListBlobItem, bool> predicate = null,
+            CancellationToken cancellationToken = default)
         {
+            predicate ??= _ => true;
+            var doneTasks = new List<Task>();
+            var queue = new Queue<(IListBlobItem item, string itemDirectory)>();
             Directory.CreateDirectory(destinationDirectory);
             foreach (var item in await container.ListBlobsAsync(cancellationToken).ConfigureAwait(false))
             {
-                await item.DownloadAsync(destinationDirectory, cancellationToken).ConfigureAwait(false);
+                queue.Enqueue((item, destinationDirectory));
             }
-        }
 
-        internal static async Task DownloadAsync(this CloudBlobDirectory cloudDirectory, string destinationDirectory, CancellationToken cancellationToken = default)
-        {
-            Directory.CreateDirectory(destinationDirectory);
-            foreach (var item in await cloudDirectory.ListBlobsAsync(cancellationToken).ConfigureAwait(false))
+            while (queue.Count != 0)
             {
-                await item.DownloadAsync(destinationDirectory, cancellationToken).ConfigureAwait(false);
+                var (item, itemDirectory) = queue.Dequeue();
+                if (!predicate(item))
+                {
+                    continue;
+                }
+
+                switch (item)
+                {
+                    case CloudBlockBlob blockBlob:
+                        {
+                            doneTasks.Add(DownloadBlobAsync(blockBlob, itemDirectory, cancellationToken));
+                            break;
+                        }
+                    case CloudBlobDirectory directory:
+                        {
+                            var directoryPath = Path.Combine(destinationDirectory, directory.GetName());
+                            Directory.CreateDirectory(directoryPath);
+                            foreach (var childItem in await directory.ListBlobsAsync(cancellationToken).ConfigureAwait(false))
+                            {
+                                queue.Enqueue((childItem, directoryPath));
+                            }
+                        }
+                        break;
+                    default:
+                        throw new Exception($"Did not recognize blob type {item.GetType()}");
+                    }
             }
-        }
 
-        public static async Task DownloadAsync(this IListBlobItem item, string destinationDirectory, CancellationToken cancellationToken = default)
-        {
-            switch (item)
+            static async Task DownloadBlobAsync(CloudBlockBlob blockBlob, string targetDirectory, CancellationToken cancellationToken)
             {
-                case CloudBlockBlob blockBlob:
-                    {
-                        var content = await blockBlob.DownloadTextAsync(cancellationToken).ConfigureAwait(false);
-                        var name = Path.GetFileName(blockBlob.Name);
-                        var filePath = Path.Combine(destinationDirectory, name);
-                        await File.WriteAllTextAsync(filePath, content, cancellationToken).ConfigureAwait(false);
-                    }
-                    break;
-                case CloudBlobDirectory directory:
-                    {
-                        var directoryPath = Path.Combine(destinationDirectory, directory.GetName());
-                        await directory.DownloadAsync(directoryPath, cancellationToken).ConfigureAwait(false);
-                    }
-                    break;
-                default:
-                    throw new Exception($"Did not recognize blob type {item.GetType()}");
+                var content = await blockBlob.DownloadTextAsync(cancellationToken).ConfigureAwait(false);
+                var name = Path.GetFileName(blockBlob.Name);
+                var filePath = Path.Combine(targetDirectory, name);
+                await File.WriteAllTextAsync(filePath, content, cancellationToken).ConfigureAwait(false);
             }
         }
 

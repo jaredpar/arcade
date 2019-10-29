@@ -362,15 +362,12 @@ cd %HELIX_CORRELATION_PAYLOAD%
         private void PrepXunit(string unitTestDirectory)
         {
             // TODO: this is a hack. Need to find the nuget path better.
-            var xunitToolsDirectory = @"P:\nuget\xunit.runner.console\2.4.1\tools\net472";
+            var xunitToolsDirectory = @"P:\nuget\xunit.runner.console\2.4.1-pre.build.4059\tools\net472";
             foreach (var sourceFilePath in Directory.EnumerateFiles(xunitToolsDirectory))
             {
                 var destFileName = Path.GetFileName(sourceFilePath);
                 var destFilePath = Path.Combine(unitTestDirectory, destFileName);
-                if (!File.Exists(destFilePath))
-                {
-                    File.Copy(sourceFilePath, destFilePath, overwrite: true);
-                }
+                File.Copy(sourceFilePath, destFilePath, overwrite: true);
             }
         }
     }
